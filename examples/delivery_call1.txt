@@ -1,0 +1,8 @@
+Nisha Rao: Thanks for making time. Let's scope the delivery app.
+Nisha Rao: We'll only deliver within a 5 kilometer radius of each restaurant.
+Dan Alvarez: Understood, 5 kilometers. How do customers pay?
+Nisha Rao: Customers pay by card or cash on delivery.
+Dan Alvarez: Card or cash, noted. Anything on tracking?
+Nisha Rao: Show the customer a live map with the driver's location once the order is picked up.
+Dan Alvarez: Great. Let's regroup next week.
+Nisha Rao: Perfect, thanks everyone.

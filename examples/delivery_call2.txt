@@ -1,0 +1,9 @@
+Nisha Rao: Quick follow-up on the delivery app.
+Nisha Rao: Let's remove cash on delivery, card only from now on.
+Dan Alvarez: Okay, card only, no cash. Got it.
+Nisha Rao: Just confirming, the 5 kilometer delivery radius stays as is.
+Dan Alvarez: Yes, no change there. Anything new?
+Nisha Rao: Also send a push notification when the driver is two minutes away.
+Nisha Rao: And customers should be able to rate the driver from one to five stars after delivery.
+Dan Alvarez: Nice. How was the offsite, by the way?
+Nisha Rao: It went well, thanks. Let's wrap here.

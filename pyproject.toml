@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mom-phase1"
+version = "0.1.0"
+description = "Phase 1 of the client-call -> requirements pipeline: extract cited statements from call transcripts into per-feature knowledge docs, backed by a local deepseek-r1:7b model via Ollama. No citation, no statement."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+# Nicer interactive prompt (history, completion). Pure stdlib fallback works without it.
+cli = ["prompt_toolkit>=3.0"]
+
+[project.scripts]
+mom-phase1 = "mom_phase1.cli:main"
+
+[tool.setuptools]
+packages = ["mom_phase1"]

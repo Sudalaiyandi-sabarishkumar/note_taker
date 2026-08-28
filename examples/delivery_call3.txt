@@ -1,0 +1,9 @@
+Nisha Rao: A few more changes for the delivery app.
+Nisha Rao: Actually, extend the delivery radius to 8 kilometers in the suburbs.
+Dan Alvarez: So 8 kilometers for suburban areas. Understood.
+Nisha Rao: Card only is confirmed, no change there.
+Nisha Rao: We also want people to schedule an order up to three days in advance.
+Dan Alvarez: Scheduled orders, three days out. Anything else?
+Nisha Rao: The app should just feel really premium and smooth.
+Dan Alvarez: Noted. That's all for today.
+Nisha Rao: Thanks, talk soon.
