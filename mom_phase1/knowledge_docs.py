@@ -1,12 +1,22 @@
 """Merge extracted statements into per-feature knowledge docs.
 
-Pure Python -- no model calls here. This is the structural half of "no
-citation, no statement": every line written traces back to a quote the
-extract step already verified.
+The doc structure written here is pure Python -- every Established Fact
+traces back to a quote the extract step already verified ("no citation, no
+statement"). Two optional callbacks add model-written prose that is
+DERIVED from those cited facts, never new information: ``canon_fn`` folds a
+call's fragmented area names, and ``story_fn`` writes the "## User Story"
+line by combining a feature's current (non-superseded) facts.
+
+Each doc has four sections:
+  ## User Story          one plain-language synthesis of the current facts
+  ## Established Facts    the cited facts, superseded ones kept + marked
+  ## Open Questions       [NEEDS REVIEW] / [UNVERIFIED CITATION] items
+  ## Change Log           append-only audit trail
 
 Merge policy:
-  * Feature routing onto an existing doc is mechanical word-overlap
-    (Jaccard), not a model instruction to "reuse the name".
+  * A call's freshly-extracted area names are first folded to canonical
+    names (``canon_fn``, or a mechanical word-overlap fallback), then
+    routed onto an existing doc where the words overlap enough.
   * A statement for a feature with NO existing facts goes straight in as an
     Established Fact.
   * A statement for a feature that ALREADY has facts is reconciled against
@@ -93,6 +103,52 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "unnamed-feature"
 
 
+def canonicalize_batch_features(statements):
+    """Collapse near-duplicate feature names *within one call's* extractions
+    before anything is written -- the model still coins "Certificate
+    Content" / "Certificate Format" for one area within a single call, and
+    those never get reconciled against each other later. Groups names that
+    share a distinctive word (one not used by 3+ other names in the batch)
+    or that clear the same overlap bar as cross-call routing, then rewrites
+    every statement to the shortest name in its group."""
+    names = list(dict.fromkeys(s["feature"] for s in statements))
+    if len(names) < 2:
+        return statements
+
+    word_freq = {}
+    for n in names:
+        for w in _feature_words(n):
+            word_freq[w] = word_freq.get(w, 0) + 1
+    generic = {w for w, c in word_freq.items() if c >= 3}
+
+    parent = {n: n for n in names}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb, key=len)] = min(ra, rb, key=len)
+
+    for i, a in enumerate(names):
+        wa = _feature_words(a)
+        for b in names[i + 1:]:
+            wb = _feature_words(b)
+            shared = wa & wb
+            distinctive = shared - generic
+            if distinctive or match_existing_feature(a, [b]) == b:
+                union(a, b)
+
+    canon = {n: find(n) for n in names}
+    for s in statements:
+        s["feature"] = canon.get(s["feature"], s["feature"])
+    return statements
+
+
 # --------------------------------------------------------------------------
 # reading an existing doc
 # --------------------------------------------------------------------------
@@ -161,7 +217,7 @@ def _ef_line(f):
 
 
 def _render(feature, facts, new_questions, prior_questions_raw,
-            prior_changelog_raw, changelog_entry):
+            prior_changelog_raw, changelog_entry, user_story):
     ef_lines = "\n".join(
         _ef_line(f) for f in sorted(facts, key=lambda f: f["id"])
     ) or "- None yet."
@@ -175,6 +231,7 @@ def _render(feature, facts, new_questions, prior_questions_raw,
 
     return (
         f"# {feature}\n\n"
+        f"## User Story\n{user_story}\n\n"
         f"## Established Facts\n{ef_lines}\n\n"
         f"## Open Questions / Ambiguities\n{q_text}\n\n"
         f"## Change Log\n{cl_text}\n"
@@ -184,7 +241,8 @@ def _render(feature, facts, new_questions, prior_questions_raw,
 # --------------------------------------------------------------------------
 # the merge
 # --------------------------------------------------------------------------
-def merge_statements(statements, source_name, docs_dir=None, reconcile=None):
+def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
+                     story_fn=None, canon_fn=None):
     """Write/update one doc per feature. Returns a list of per-feature
     summary strings for the CLI to print.
 
@@ -192,6 +250,14 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None):
     reason)`` decides how a statement relates to a feature that already has
     facts (see module docstring). If it is None, every such statement is
     filed as [NEEDS REVIEW] -- the old conservative behaviour.
+
+    ``story_fn(feature, active_facts) -> str`` synthesises the "## User
+    Story" line from the non-superseded facts. If None, a mechanical join of
+    the fact summaries is used.
+
+    ``canon_fn(names) -> {name: canonical}`` folds this call's fragmented
+    area names before routing. If None, a mechanical word-overlap fold is
+    used.
     """
     docs_dir = docs_dir or DOCS_DIR
     os.makedirs(docs_dir, exist_ok=True)
@@ -199,6 +265,14 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None):
     existing = discover_features(docs_dir)
     known = list(existing.keys())
 
+    # First fold near-duplicate feature names coined within THIS call, then
+    # route what's left onto an existing doc where one matches.
+    if canon_fn:
+        mapping = canon_fn(list(dict.fromkeys(s["feature"] for s in statements)))
+        for s in statements:
+            s["feature"] = mapping.get(s["feature"], s["feature"])
+    else:
+        canonicalize_batch_features(statements)
     for s in statements:
         s["feature"] = match_existing_feature(s["feature"], known)
 
@@ -308,9 +382,17 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None):
             f"{n_unverified} unverified"
         )
         changelog_entry = "\n".join([run_line, *extra_log])
+
+        active_now = _active(all_facts)
+        if story_fn:
+            user_story = story_fn(feature, active_now)
+        else:
+            user_story = ("; ".join(f["summary"].rstrip(".") for f in active_now)
+                          + "." if active_now else "No confirmed requirements yet.")
+
         doc_text = _render(feature, all_facts, new_questions,
                            sections["open_questions"], sections["change_log"],
-                           changelog_entry)
+                           changelog_entry, user_story)
         with open(path, "w", encoding="utf-8") as f:
             f.write(doc_text)
 

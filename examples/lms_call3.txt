@@ -1,0 +1,51 @@
+Priya Raman: Morning all, call three. How was the fiscal year end, Marcus, did you survive it?
+Marcus Bell: Barely. Lots of spreadsheets. But we are through it now, so I have more bandwidth again.
+Rebecca Nguyen: Morning Priya, morning Kofi. We have another round of refinements and a few new features.
+Priya Raman: Perfect, same format as last time. Changes first?
+Rebecca Nguyen: Captions. Captions need to be available in English, Spanish, and French at launch, not just English.
+Priya Raman: So the earlier English only at launch is out, and we now need three caption languages, English, Spanish, and French, on day one.
+Rebecca Nguyen: Correct. Legal reviewed our learner locations and we cannot launch with English alone.
+Kofi Mensah: That affects the content pipeline, we will need the caption files for all three per video before a course can go live.
+Marcus Bell: Understood, we will get our content team the requirements this week.
+Priya Raman: Noted. Next change?
+Rebecca Nguyen: The resume video position. Bump the resume-video feature so it also syncs across devices, not just per browser.
+Priya Raman: So the earlier per browser is fine is now upgraded. Resume position must follow the learner across devices and browsers.
+Rebecca Nguyen: Yes. People start on their laptop at work and finish on their phone at home, and losing their place frustrates them.
+Priya Raman: Clear, cross device resume. Any other changes?
+Rebecca Nguyen: One clarification that is really a confirmation. Three roles, learner instructor admin, that's still correct.
+Priya Raman: Confirmed, the three roles are unchanged. Okay, on to new features. Go ahead.
+Rebecca Nguyen: Final course exams must use webcam proctoring to verify the learner's identity.
+Priya Raman: So distinct from the module quizzes, a course has a final exam, and that exam requires webcam proctoring for identity verification.
+Rebecca Nguyen: Right. The module quizzes stay as they are, unproctored. Only the final exam is proctored.
+Marcus Bell: This is for the courses that carry regulatory weight, where we have to prove who actually took the exam.
+Kofi Mensah: Do you have a proctoring vendor in mind, or is that our choice?
+Rebecca Nguyen: We are open to your recommendation, as long as it does identity check and records the session.
+Priya Raman: Understood, we will bring options. Next new item?
+Rebecca Nguyen: Add badges that learners earn for streaks and for finishing courses early.
+Priya Raman: Gamification badges. Two triggers so far, learning streaks and early completion. Are badges just cosmetic or do they unlock anything?
+Rebecca Nguyen: Purely cosmetic for now, they show on the learner's profile. No unlocks.
+Marcus Bell: Our L and D team is convinced badges will help with engagement, so they want it in phase one if possible.
+Priya Raman: We will scope it and let you know if phase one is realistic. Next?
+Rebecca Nguyen: On reporting, the learner export must also include total time spent per course.
+Priya Raman: So the CSV export gains a column, total time spent per learner per course, on top of the enrollment and completion data.
+Rebecca Nguyen: Yes. Finance wants it for the return on investment analysis.
+Priya Raman: Noted. Anything on the discussion boards?
+Rebecca Nguyen: Instructors can pin an announcement to the top of a course discussion board.
+Priya Raman: A single pinned announcement per board, always shown at the top. Just one, or several?
+Rebecca Nguyen: One pinned announcement at a time is fine.
+Priya Raman: Got it. Last new item?
+Rebecca Nguyen: Add a waiting list for paid courses that are full.
+Priya Raman: So paid courses can have a capacity, and when it is reached, additional learners join a waiting list and get a spot when one frees up.
+Marcus Bell: Some of our instructor led cohorts have a hard cap of 30, and right now people just get turned away.
+Priya Raman: Understood, waiting list with automatic promotion. Okay, that is the concrete list. Rebecca, you mentioned some higher level goals too?
+Rebecca Nguyen: Yes, more of a north star. The whole thing should feel modern and delightful to use.
+Marcus Bell: And it needs to be fast. Our current system is painfully slow and people complain constantly.
+Rebecca Nguyen: Basically we want learners to really love the platform, not just tolerate it.
+Priya Raman: Understood, and I hear you, though those are directional rather than something we can build to a spec. We will keep them front of mind as principles.
+Kofi Mensah: We can turn some of that into concrete non functional targets later, like page load budgets.
+Priya Raman: Exactly, we will bring proposed performance numbers to a later call so there is something measurable. Anything else for today?
+Rebecca Nguyen: That is everything from our side.
+Priya Raman: Great. This was a big one. We will send updated notes tomorrow. Same time next week?
+Marcus Bell: Same time works, and I will actually be awake for this one now that year end is done.
+Rebecca Nguyen: Ha. Thanks everyone, talk next week.
+Priya Raman: Thanks all, bye.

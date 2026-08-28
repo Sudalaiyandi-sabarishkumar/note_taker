@@ -31,18 +31,24 @@ requirement, decision, constraint, or fact actually stated by a person in
 this part, output one block in EXACTLY this format and nothing else:
 
 ## STATEMENT
-Feature: <the standing feature area, 1-3 plain words, e.g. "Notifications", "Leave Approval", "Attendance Reporting">
+Feature: <a BROAD feature area, 1-2 plain words, e.g. "Notifications", "Certificates", "Enrollment", "Video Playback">
 Summary: <one plain sentence a human can skim later>
 Quote: "<exact sentence(s) from THIS transcript part, copied verbatim>"
 Speaker: <speaker name exactly as written, or "Unidentified speaker">
 Timestamp: <the [HH:MM:SS...] prefix on that line, or "not available">
 
-Rules for Feature:
-- Name the lasting feature area, NOT the change being made to it. If the
-  client switches notifications from email to SMS, the Feature is still
-  "Notifications" -- never "Switch to SMS" or "SMS Notifications".
-- 1-3 words. No parentheses, no "from X to Y", no verbs like "switching".
-- The same feature discussed on any later call must get this identical name.
+Rules for Feature -- this is where extraction usually goes wrong:
+- A feature area is BROAD and collects many facts over many calls. A whole
+  product has roughly 10-20 areas, not one per sentence.
+- Do NOT split one area across several names. "Certificate wording",
+  "Certificate PDF", "Certificate trigger" are ALL just "Certificates".
+  "Playback speed", "Resume position", "Offline download" are ALL just
+  "Video Playback".
+- Give every statement about the same area the IDENTICAL Feature name, and
+  reuse an area name already in use rather than coining a near-duplicate.
+- Name the lasting area, NOT the change to it: switching notifications from
+  email to SMS is still "Notifications", never "Switch to SMS". No
+  parentheses, no "from X to Y", no verbs.
 
 Repeat the block for every distinct statement, however minor -- this is
 raw extraction, not a summary. If this part contains only small talk,

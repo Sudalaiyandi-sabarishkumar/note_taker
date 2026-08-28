@@ -1,0 +1,113 @@
+Priya Raman: Good morning everyone, thanks for making the time. Can you all hear me okay?
+Rebecca Nguyen: Morning Priya, yes we can hear you fine.
+Marcus Bell: Hey all, Marcus here as well, joining from the Denver office today.
+Priya Raman: Perfect. So this is our first proper requirements call for the learning platform. I've got Kofi on with me from engineering.
+Kofi Mensah: Hi folks, looking forward to it.
+Priya Raman: Before we dive in, how did the board presentation go last week Rebecca?
+Rebecca Nguyen: It went well, thanks for asking. They approved the budget so we are good to move forward properly now.
+Priya Raman: That's great news. Congratulations. Okay, let's start with the shape of the content itself. How is a course structured?
+Rebecca Nguyen: Each course is made up of modules, and each module contains video lessons, readings, and one quiz.
+Priya Raman: Got it. So modules are the main building block, and every module ends with exactly one quiz.
+Rebecca Nguyen: That's right. The quiz is how we gate progress.
+Marcus Bell: We looked at a few competitors and the ones that let people skip around freely had much worse completion rates.
+Priya Raman: Understood. So let's talk about that gating. What does a learner need to do to move forward?
+Rebecca Nguyen: A learner must score at least 80 percent on a module quiz to unlock the next module.
+Kofi Mensah: And if they fail, do they just retake it immediately, or is there a cooldown?
+Rebecca Nguyen: Learners get three attempts per quiz before they are locked out for 24 hours.
+Marcus Bell: The 24 hour thing came from our compliance team, they did not want people brute forcing the answers.
+Priya Raman: Makes sense. I'll note that the lockout is a hard requirement from compliance. Now the videos themselves, any specific playback requirements?
+Rebecca Nguyen: All lesson videos must support playback speeds from 0.5x to 2x.
+Rebecca Nguyen: And video progress should be saved so a learner can resume exactly where they left off.
+Priya Raman: Resume position, noted. Is that per device or per account?
+Rebecca Nguyen: For now per browser is fine, we can revisit that later.
+Kofi Mensah: Okay. What about captions and accessibility, since that often has legal implications?
+Rebecca Nguyen: All videos must have closed captions in English at launch.
+Marcus Bell: We have learners in Quebec so French will come up eventually, but English is what we need for day one.
+Priya Raman: Understood, English captions at launch, other languages later. Let's move to certificates. What triggers a certificate?
+Rebecca Nguyen: A completion certificate is issued automatically once every module in a course is passed.
+Priya Raman: And what needs to be on the certificate?
+Rebecca Nguyen: Certificates must include the learner's full name, the course title, and the completion date.
+Kofi Mensah: Do you need them as downloadable PDFs, or just a page on the site?
+Rebecca Nguyen: A downloadable PDF, definitely. People print these and put them in their review packets.
+Priya Raman: Noted, PDF certificates. Quick tangent, did everyone see the new office espresso machine finally arrived?
+Marcus Bell: I did, I have had four cups already today, it is a problem.
+Rebecca Nguyen: Ha. Okay, back to it. Enrollment. How do people get into a course?
+Rebecca Nguyen: Learners self-enroll in free courses, but paid courses require a manager's approval first.
+Priya Raman: So there is an approval workflow for anything with a price tag. Who is the approver?
+Rebecca Nguyen: The learner's direct manager, as defined in our HR system.
+Marcus Bell: We will give you an HR feed so you always have the current manager relationship.
+Priya Raman: Great, we will consume that feed. And payment methods for the paid courses?
+Rebecca Nguyen: We take payment by credit card and by company purchase order.
+Marcus Bell: The purchase order route is mostly for bulk enrollments, like when a whole team signs up.
+Priya Raman: Understood. Credit card and PO. Now notifications, what should the system be sending out?
+Rebecca Nguyen: Send a reminder email if a learner has not opened a course for seven days.
+Priya Raman: A seven day inactivity nudge, got it. Anything else on the notification side for now?
+Rebecca Nguyen: That's the main one for launch. We will probably want more later.
+Kofi Mensah: What about the social side, do learners interact with each other or with instructors?
+Rebecca Nguyen: Every course has a discussion board where learners can post questions to the instructor.
+Priya Raman: Is that threaded, like one board per course, or per module?
+Rebecca Nguyen: One board per course is fine for launch.
+Marcus Bell: The instructors were very clear they do not want twenty separate module boards to monitor.
+Priya Raman: Fair enough. Before instructors, a couple of authoring questions. How does a course get published?
+Rebecca Nguyen: An instructor builds a course in a draft state, and an admin must review and publish it before learners can see it.
+Priya Raman: So there is a draft and a published state, with an admin approval gate between them.
+Rebecca Nguyen: Yes. Instructors cannot publish their own courses.
+Kofi Mensah: Can an instructor edit a course after it is published?
+Rebecca Nguyen: They can make edits, but the changes stay in a pending state until an admin approves them again.
+Priya Raman: Understood, every publish and every post publish edit goes through admin review. Who assigns an instructor to a course?
+Rebecca Nguyen: An admin assigns one or more instructors to each course. An instructor never self assigns.
+Priya Raman: Noted. Can a course require another course as a prerequisite?
+Rebecca Nguyen: Yes, a course can list one or more prerequisite courses that a learner must complete before enrolling.
+Marcus Bell: The advanced security course should not be open to someone who has not done the basics, for example.
+Priya Raman: Clear. And is there a default enrollment cap on a course, or is it unlimited unless set?
+Rebecca Nguyen: Courses are unlimited by default. A cap is optional and only set for instructor led cohorts.
+Priya Raman: Understood. One admin question on email, what address do system emails come from?
+Rebecca Nguyen: All system emails must be sent from learning@ourcompany.com with the display name Company Learning.
+Priya Raman: Noted, single sender identity for everything. Speaking of instructors, what do they need to see?
+Rebecca Nguyen: Instructors need a dashboard showing completion rate and average quiz score per course.
+Priya Raman: Per course, aggregated. Do they need per learner drill down as well?
+Rebecca Nguyen: Eventually yes, but the two aggregate numbers are what we need first.
+Kofi Mensah: And admins, what is their view?
+Rebecca Nguyen: Admins can export a CSV of all learners, their enrolled courses, and completion status.
+Priya Raman: A full export, understood. Let's talk roles and permissions generally.
+Rebecca Nguyen: There are three roles: learner, instructor, and admin.
+Priya Raman: Just those three, no super admin or org owner concept?
+Rebecca Nguyen: Just those three for now. Admin can do everything.
+Marcus Bell: Keep it simple, we can always add granularity later if we regret it.
+Priya Raman: Agreed. Last big topic for today, platforms. Web only, or mobile too?
+Rebecca Nguyen: The learner experience must work on mobile browsers, but a native app is out of scope for now.
+Priya Raman: So responsive web, no app store presence. Understood.
+Marcus Bell: If the mobile web experience is good enough, we may never need an app, honestly.
+Priya Raman: That is often how it goes. We still have a bit of time, can we cover a few smaller topics?
+Rebecca Nguyen: Sure, go for it.
+Priya Raman: How do learners find courses in the first place? Is there a catalog?
+Rebecca Nguyen: There is a course catalog page that lists every published course with its title, a short description, and an estimated duration.
+Priya Raman: And search within that catalog?
+Rebecca Nguyen: Learners can search the catalog by course title and filter by category.
+Marcus Bell: Categories are things like Compliance, Technical, Leadership, that sort of taxonomy.
+Priya Raman: Understood. Do learners rate or review courses?
+Rebecca Nguyen: After finishing a course, a learner can leave a star rating from one to five and an optional written review.
+Priya Raman: Are reviews shown publicly on the catalog page?
+Rebecca Nguyen: Yes, the average star rating and the reviews are visible to everyone browsing the catalog.
+Kofi Mensah: Do instructors get to moderate or hide a review?
+Rebecca Nguyen: An admin can hide a review, but instructors cannot. Let's keep moderation with admins only.
+Priya Raman: Noted, admin only review moderation. What about saving a course for later?
+Rebecca Nguyen: Learners can bookmark a course from the catalog to a personal saved list.
+Priya Raman: Simple enough. A question that always comes up, can learners download videos to watch offline?
+Rebecca Nguyen: No offline downloads. Everything is streamed only, that is a firm decision from security.
+Priya Raman: Understood, streaming only, no downloads. On the security theme, any session timeout requirement?
+Rebecca Nguyen: A learner is signed out automatically after 30 minutes of inactivity.
+Marcus Bell: That number also came from the security team, same as the quiz lockout.
+Priya Raman: Noted, 30 minute idle timeout, security owned. Last one, data retention?
+Rebecca Nguyen: Learner activity records must be kept for at least five years for audit purposes.
+Priya Raman: Five year minimum retention on activity records. Does that include the video watch logs?
+Rebecca Nguyen: Yes, watch logs, quiz attempts, all of it. Five years minimum.
+Priya Raman: Understood. And the interface language, English only or localized?
+Rebecca Nguyen: The interface is English only for launch. Content captions are separate from the interface language.
+Priya Raman: Clear, English UI at launch. Okay, now I think that is a genuinely solid first pass. Kofi, anything you are missing?
+Kofi Mensah: I think I have what I need to start sketching the data model. I will send notes by end of day.
+Priya Raman: Perfect. Rebecca, Marcus, thank you both. Shall we do the same time next week?
+Rebecca Nguyen: Next week works for me. Marcus?
+Marcus Bell: Works for me too. I will send a calendar hold.
+Priya Raman: Great. Enjoy the espresso, Marcus. Talk soon everyone.
+Rebecca Nguyen: Thanks all, bye.

@@ -25,7 +25,8 @@ import re
 import sys
 
 from . import __version__
-from .extract import extract_statements, reconcile_statement
+from .extract import (canonicalize_feature_names, extract_statements,
+                      reconcile_statement, synthesize_user_story)
 from .knowledge_docs import DOCS_DIR, discover_features, merge_statements
 from .ollama_client import DEFAULT_MODEL, OllamaError
 
@@ -80,7 +81,9 @@ def run_phase1(path: str) -> None:
         source_name = os.path.splitext(os.path.basename(path))[0]
         print("Reconciling against existing facts...")
         summary = merge_statements(statements, source_name,
-                                   reconcile=reconcile_statement)
+                                   reconcile=reconcile_statement,
+                                   story_fn=synthesize_user_story,
+                                   canon_fn=canonicalize_feature_names)
     except OllamaError as exc:
         print(f"\n{exc}")
         return

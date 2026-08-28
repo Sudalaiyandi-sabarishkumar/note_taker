@@ -41,15 +41,15 @@ _LABELS = {
 def _instruction(part_no: int, total: int, known_features) -> str:
     if known_features:
         feat = (
-            "Features already known from earlier calls: "
+            "Feature areas already in use (reuse the EXACT name when a "
+            "statement belongs to one of these -- same spelling and case -- "
+            "even if the statement changes or contradicts what was said "
+            "before; it is still the same feature area):\n  "
             + ", ".join(sorted(known_features))
-            + ".\nIf a statement is about one of these, reuse that EXACT name "
-            "(same spelling and case) -- even when the statement CHANGES or "
-            "contradicts what was said before, it is still the same feature. "
-            "Only invent a new feature name when a statement fits none of them."
+            + "\nOnly invent a new area name when a statement fits none of them."
         )
     else:
-        feat = "No features are known yet -- this is the first call processed."
+        feat = "No feature areas exist yet -- this is the first part processed."
     return f"""This is PART {part_no} of {total} of one call transcript (not the whole call).
 {feat}
 
@@ -57,15 +57,26 @@ For every distinct requirement, decision, constraint, or fact actually stated
 by a person in THIS PART, output one block in exactly this format:
 
 ## STATEMENT
-Feature: <the standing feature area in 1-3 plain words, e.g. "Notifications">
+Feature: <a BROAD feature area, 1-2 plain words>
 Summary: <one plain sentence for a human skimming later>
 Quote: "<exact sentence(s) from THIS part, copied verbatim>"
 Speaker: <name exactly as written, or "Unidentified speaker">
 Timestamp: <the [HH:MM:SS...] prefix on that line, or "not available">
 
-Name the lasting feature, NOT the change to it: a switch from email to SMS
-is still Feature "Notifications", never "SMS Notifications" or "Switch to
-SMS". No parentheses, no "from X to Y", no verbs.
+Rules for Feature -- read carefully, this is where extractions usually go wrong:
+- A feature area is BROAD and collects many facts over many calls. Think
+  "Certificates", "Notifications", "Enrollment", "Video Playback",
+  "Course Publishing", "Reviews", "Payments" -- roughly 10-20 areas for a
+  whole product.
+- Do NOT create a separate area per sentence. "Certificate wording",
+  "Certificate PDF", "Certificate issue trigger" are ALL just "Certificates".
+  "Playback speed", "Resume position", "Offline download" are ALL just
+  "Video Playback".
+- When several statements in THIS part concern the same area, give them the
+  IDENTICAL Feature name.
+- Name the lasting area, never the change to it: switching email to SMS is
+  still "Notifications", never "SMS Notifications" or "Switch to SMS". No
+  parentheses, no "from X to Y", no verbs.
 
 Repeat for every distinct statement, however minor. If this part has only
 small talk or scheduling, output the single line: NO STATEMENTS
@@ -167,19 +178,27 @@ def extract_statements(transcript_text: str, known_features, model=None,
 
     progress(f"Extracting cited statements from {len(chunks)} part(s)...")
     found = []
+    # Feature names grow as chunks are processed so a later chunk of the SAME
+    # call is told to reuse the areas its earlier chunks established, instead
+    # of coining a near-duplicate.
+    seen_features = list(dict.fromkeys(known_features))
     for i, chunk in enumerate(chunks, start=1):
         progress(f"  part {i}/{len(chunks)}...")
         messages = [
             {"role": "system", "content": _SYSTEM},
             {"role": "user", "content":
                 f"TRANSCRIPT PART {i} OF {len(chunks)}:\n{chunk}\n\n"
-                + _instruction(i, len(chunks), known_features)},
+                + _instruction(i, len(chunks), seen_features)},
         ]
         raw = chat(messages, model=model, show_progress=False)
         answer = strip_think(raw)
         if answer.strip().upper().startswith("NO STATEMENTS"):
             continue
-        found.extend(parse_statement_blocks(answer))
+        blocks = parse_statement_blocks(answer)
+        found.extend(blocks)
+        for b in blocks:
+            if b["feature"] not in seen_features:
+                seen_features.append(b["feature"])
 
     spans = _candidate_spans(transcript_text)
     norm_spans = [_normalise(sp) for sp in spans]
@@ -283,3 +302,166 @@ is NEW or DUPLICATE, never CHANGE."""
             return "UNCLEAR", None, reason or "CHANGE verdict had no valid TARGET"
         target_id = None
     return verdict, target_id, reason
+
+
+# --------------------------------------------------------------------------
+# feature-name canonicalisation: fold a call's fragmented area names
+# --------------------------------------------------------------------------
+_CANON_SYSTEM = (
+    "You tidy a list of feature-area names extracted from one requirements "
+    "call. Some are near-duplicates naming the same broad area. You map each "
+    "name to a canonical area name. You never merge names that are genuinely "
+    "different areas."
+)
+
+_CANON_LINE_RE = re.compile(r"^\s*(\d+)[.):]\s*(.+?)\s*$")
+
+
+def canonicalize_feature_names(names, model=None):
+    """One LLM call that folds a call's fragmented area names. Given
+    ``["Certificate Format", "Certificate Content", "Video Playback",
+    "Playback Speed"]`` it returns ``{"Certificate Format": "Certificates",
+    "Certificate Content": "Certificates", "Video Playback": "Video
+    Playback", "Playback Speed": "Video Playback"}``. On any failure it
+    returns an identity map, so the caller always gets something usable."""
+    names = list(dict.fromkeys(names))
+    identity = {n: n for n in names}
+    if len(names) < 2:
+        return identity
+    model = model or DEFAULT_MODEL
+    numbered = "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
+    prompt = f"""These feature-area names came from ONE requirements call. Some are
+near-duplicates that name the same broad area -- for example "Certificate
+Format" / "Certificate Content" / "Certificate Issuance" are all
+"Certificates"; "Playback Speed" / "Resume Position" are both "Video
+Playback".
+
+Names:
+{numbered}
+
+Output exactly one line per name above, in the same order and numbering:
+
+<n>. <canonical area name>
+
+Rules:
+- Names for the same broad area MUST get the identical canonical name.
+- Canonical names are short (1-2 words); reuse an input name where sensible.
+- A name with no duplicate maps to itself (cleaned up).
+- Never merge names that are genuinely different areas.
+- No text before line 1 or after the last line."""
+    try:
+        raw = chat([{"role": "system", "content": _CANON_SYSTEM},
+                    {"role": "user", "content": prompt}],
+                   model=model, show_progress=False, num_predict=800, temperature=0)
+    except Exception:
+        return identity
+    mapping = {}
+    for line in strip_think(raw).splitlines():
+        m = _CANON_LINE_RE.match(line)
+        if not m:
+            continue
+        idx = int(m.group(1)) - 1
+        canon = m.group(2).strip().strip('"').strip()
+        if 0 <= idx < len(names) and canon:
+            mapping[names[idx]] = canon
+    # any name the model skipped keeps its original name
+    for n in names:
+        mapping.setdefault(n, n)
+    return mapping
+
+
+# --------------------------------------------------------------------------
+# user story: one plain-language synthesis of a feature's CURRENT facts
+# --------------------------------------------------------------------------
+_STORY_SYSTEM = (
+    "You restate a feature's already-confirmed requirements as one short "
+    "plain-language description of how the feature currently works. Use ONLY "
+    "the words and facts you are given. Never add a detail, a channel, a "
+    "number, a role, or a capability that is not written in the facts. If two "
+    "facts overlap, merge them; if they do not, just state both. Every fact "
+    "you are given is currently true."
+)
+
+_STORY_STOPWORDS = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by",
+    "is", "are", "be", "will", "must", "can", "should", "via", "from", "as",
+    "that", "this", "when", "after", "before", "only", "also", "each", "all",
+    "not", "no", "it", "its", "they", "their", "them", "user", "users",
+    "customer", "customers", "feature", "system", "currently", "works", "work",
+    "lets", "let", "pickup", "provide", "ensure", "allow", "include", "make",
+    "using", "used", "use", "able", "then", "into", "over", "up",
+}
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _stem(w):
+    for suf in ("ing", "ed", "es", "s"):
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[: -len(suf)]
+    return w
+
+
+def _content_words(text):
+    return {_stem(w) for w in _WORD_RE.findall(text.lower())
+            if len(w) >= 3 and w not in _STORY_STOPWORDS}
+
+
+def synthesize_user_story(feature, active_facts, model=None):
+    """Return a short plain-language description of the CURRENT agreed
+    behaviour of ``feature``, derived strictly from ``active_facts`` (the
+    non-superseded Established Facts). Guardrails:
+
+      * 0 facts   -> a fixed placeholder.
+      * 1 fact    -> that fact's summary verbatim (no model call -- there is
+                     nothing to synthesise and nothing to hallucinate).
+      * 2+ facts  -> one model call to merge them; the result is rejected
+                     (fall back to a mechanical join) if the model call
+                     fails, or if the story introduces content words that
+                     appear in none of the facts.
+    """
+    if not active_facts:
+        return "No confirmed requirements yet."
+    fallback = "; ".join(f["summary"].rstrip(".") for f in active_facts) + "."
+    if len(active_facts) == 1:
+        s = active_facts[0]["summary"].strip()
+        return s if s.endswith((".", "!", "?")) else s + "."
+
+    facts_block = "\n".join(f'- {f["summary"]} (exact words: "{f["quote"]}")'
+                            for f in active_facts)
+    prompt = f"""Feature: {feature}
+
+Confirmed facts, all currently true:
+{facts_block}
+
+Write 1 to 3 sentences describing how "{feature}" currently works. Use ONLY the
+information in the facts above. Do not introduce any channel, number, name,
+role, or capability that is not written there. Where facts overlap, combine
+them into one statement. Output only the sentences, nothing else."""
+    try:
+        raw = chat(
+            [{"role": "system", "content": _STORY_SYSTEM},
+             {"role": "user", "content": prompt}],
+            model=model or DEFAULT_MODEL, show_progress=False,
+            num_predict=400, temperature=0,
+        )
+    except Exception:
+        return fallback
+    story = strip_think(raw).strip().strip('"').strip()
+    for lead in ("Sure,", "Here is", "Here's", "The feature", "Summary:", "User story:"):
+        if story.startswith(lead):
+            story = story.split(":", 1)[-1].strip() if ":" in story[:40] else fallback
+            break
+    if not story:
+        return fallback
+
+    # Structural guard: the story may not bring in content words that appear
+    # in none of the facts (this is what caught an invented "email, SMS,
+    # WhatsApp" leaking in from a prompt example).
+    grounded = set()
+    for f in active_facts:
+        grounded |= _content_words(f["summary"]) | _content_words(f["quote"])
+    grounded |= _content_words(feature)
+    novel = _content_words(story) - grounded
+    if len(novel) >= 3:  # a little phrasing slack; 3+ novel words = invented content
+        return fallback
+    return story

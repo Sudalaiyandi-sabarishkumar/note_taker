@@ -1,0 +1,56 @@
+Priya Raman: Hi everyone, week two. Kofi and I sent over the notes and the draft data model on Friday, did you get a chance to look?
+Rebecca Nguyen: We did, thank you. Marcus and I went through it yesterday and we have a bunch of changes plus some new things.
+Marcus Bell: Morning all. Yeah, a few of our earlier calls were a bit off, we have refined them internally.
+Priya Raman: That is exactly what these calls are for. Let's go through the changes first, then the new items. Where do you want to start?
+Rebecca Nguyen: The quiz pass mark. Let's change the quiz pass mark from 80 percent to 70 percent.
+Priya Raman: Okay, so 70 percent is the new threshold to unlock the next module. Any reason for the drop?
+Rebecca Nguyen: Our subject matter experts felt 80 was too punishing for the harder technical modules and people were giving up.
+Kofi Mensah: Understood, 70 percent it is. That is a config value so it is an easy change.
+Marcus Bell: While we are on quizzes, the three attempts limit is also too tight.
+Rebecca Nguyen: Right. Increase quiz attempts from three to five before the 24 hour lockout.
+Priya Raman: So five attempts, then the 24 hour lockout still kicks in. The lockout duration itself is unchanged?
+Rebecca Nguyen: The 24 hour lockout stays exactly as is, compliance still owns that number.
+Priya Raman: Got it. Next change?
+Rebecca Nguyen: Payments. Actually, drop the purchase order option, credit card only for now.
+Priya Raman: No purchase order support at launch, credit card only. That simplifies the finance integration quite a bit.
+Marcus Bell: Finance is still arguing about the PO approval chain internally, so we would rather ship without it than wait for them.
+Priya Raman: Completely reasonable. We will design it so PO can be added later without rework. Anything else changing?
+Rebecca Nguyen: Yes, a big one. We changed our minds, we do want a native mobile app for iOS and Android in phase two.
+Priya Raman: Okay, so native app is back in scope, but explicitly phase two, after the web launch.
+Rebecca Nguyen: Correct. Do not let it slow down phase one, but we want it on the roadmap properly.
+Kofi Mensah: That is good to know now because it affects some of the API decisions we make in phase one.
+Priya Raman: Agreed, we will design the API to be app ready. Let's do the confirmations next, things you want to lock in.
+Rebecca Nguyen: Just to confirm, paid courses still need manager approval, no change there.
+Priya Raman: Manager approval for paid courses, confirmed, no change.
+Rebecca Nguyen: And certificates auto-issue on course completion, that still stands.
+Priya Raman: Confirmed, automatic certificate issuance on completion. Okay, now the new items. Go ahead.
+Rebecca Nguyen: Certificates should also carry a unique verification code that anyone can check on a public page.
+Priya Raman: So each certificate gets a unique code, and there is a public verification page where someone pastes the code and sees if it is valid.
+Rebecca Nguyen: Exactly. Recruiters have been asking our learners to prove their certificates are real.
+Marcus Bell: We had at least one case of a forged certificate on a resume, so this matters to us.
+Priya Raman: Understood, that is a real requirement then. Next?
+Rebecca Nguyen: On notifications, also send the learner's manager a monthly progress summary email.
+Priya Raman: A monthly rollup to the manager, separate from the seven day learner nudge. What is in the summary?
+Rebecca Nguyen: Courses in progress, courses completed that month, and anything overdue.
+Priya Raman: Noted. Next new item?
+Rebecca Nguyen: We want an annual subscription tier that unlocks all courses for a flat yearly fee.
+Priya Raman: So alongside paying per course, there is an all access annual subscription. Does the manager approval still apply under a subscription?
+Rebecca Nguyen: Good question. Under the subscription, no per course approval, the subscription itself is the approval.
+Marcus Bell: The subscription is sold at the company level, so procurement already signed off when they bought it.
+Priya Raman: Clear. That is an important rule, subscription bypasses the per course approval. Anything else?
+Rebecca Nguyen: Company logins must go through our Okta single sign-on.
+Priya Raman: Okta SSO for all company users. Do you need any local username and password login at all, for external people?
+Rebecca Nguyen: Not at launch. Everyone is internal and everyone is in Okta.
+Kofi Mensah: That actually simplifies things, we can lean entirely on Okta for identity.
+Priya Raman: Good. Last one on your list?
+Rebecca Nguyen: Admins can bundle several courses into a learning path that learners complete in order.
+Priya Raman: So a learning path is an ordered sequence of courses. Is the ordering enforced, like course two is locked until course one is done?
+Rebecca Nguyen: Yes, enforced order, same idea as modules within a course.
+Marcus Bell: We want to use paths for onboarding, a new hire path with six courses in a specific sequence.
+Priya Raman: Makes sense. Okay, that is a lot of good material. Kofi, you have been quiet, all captured?
+Kofi Mensah: All captured. The subscription and SSO items change my week, in a good way.
+Priya Raman: Ha, sorry about that. Rebecca, Marcus, anything on your side before we close?
+Marcus Bell: Just that we are heading into our fiscal year end so I may be slower to respond next week.
+Priya Raman: Noted, no problem. We will keep things moving. Same time next week?
+Rebecca Nguyen: Same time works. Thanks everyone, this was productive.
+Priya Raman: Agreed. Talk then, bye all.

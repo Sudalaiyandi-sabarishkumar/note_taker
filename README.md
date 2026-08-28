@@ -13,7 +13,17 @@ overwriting — flagging anything ambiguous for human review rather than guessin
 > with no real quote to point at cannot reach a file. A quote that can't be found
 > verbatim in the transcript is filed as a question, not a fact.
 
+Each feature doc opens with a **`## User Story`** — one plain-language synthesis
+of the feature's *current* (non-superseded) facts, regenerated every run. It only
+combines what the cited facts say; the facts below it are the evidence.
+
 ### How a second call is merged
+
+Before routing, a call's freshly-extracted area names are folded to canonical
+names by one LLM call, so "Certificate Format" / "Certificate Content" /
+"Certificate Issuance" all land in one **Certificates** doc rather than three.
+
+
 
 When a statement is about a feature that already has recorded facts, it is
 reconciled against them (one small LLM call per statement):
@@ -74,28 +84,35 @@ One-shot (no REPL): `mom-phase1 test_transcripts/call1.txt`
 
 ## Output shape (`knowledge/<feature>.md`)
 
-`examples/checkout_call1.txt` then `checkout_call2.txt` (drop PayPal, add Apple Pay):
+Three calls about notifications — call 1 "to all persons via email", call 2
+"to registered persons only, via email and SMS", call 3 "also via WhatsApp":
 
 ```markdown
-# Payments
+# Notifications
+
+## User Story
+Notifications are sent only to registered persons, via email, SMS, and WhatsApp.
 
 ## Established Facts
-- **EF-1** [superseded by EF-2]: Support credit card and PayPal at launch. — *"For payments, we need to support credit card and PayPal at launch."* — Maya Iyer, not available (source: checkout_call1, 2026-08-28)
-- **EF-2**: Remove PayPal and add Apple Pay. — *"Let's drop PayPal for now and add Apple Pay instead."* — Maya Iyer, not available (source: checkout_call2, 2026-08-28)
+- **EF-1** [superseded by EF-2]: Notifications go to all persons by email. — *"notification is sent to all persons via email"* — PM, not available (source: call1, ...)
+- **EF-2**: Notifications go to registered persons only, by email and SMS. — *"notification is sent to only registered persons via email and sms"* — PM, not available (source: call2, ...)
+- **EF-3**: Notifications are also sent by WhatsApp. — *"send notification via whatsapp also"* — PM, not available (source: call3, ...)
 
 ## Open Questions / Ambiguities
 - None.
 
 ## Change Log
-- 2026-08-28: processed checkout_call1 — 1 new, 0 changed, 0 restated, 0 to review, 0 unverified
-- 2026-08-28: processed checkout_call2 — 0 new, 1 changed, 0 restated, 0 to review, 0 unverified
-- 2026-08-28: EF-1 for "Payments" superseded by EF-2 (from checkout_call2). Reason: The new statement removes support for PayPal, making the existing fact incorrect.
-  - was: *"For payments, we need to support credit card and PayPal at launch."* — Maya Iyer, not available (source: checkout_call1, 2026-08-28)
-  - now: *"Let's drop PayPal for now and add Apple Pay instead."* — Maya Iyer, not available (source: checkout_call2, 2026-08-28)
+- ... : processed call1 — 1 new, 0 changed, ...
+- ... : processed call2 — 0 new, 1 changed, ...
+- ... : EF-1 superseded by EF-2 (from call2). ...  was: *"...all persons via email"*  now: *"...only registered persons via email and sms"*
+- ... : processed call3 — 1 new, 0 changed, ...
 ```
 
-The current picture of Payments is EF-2 (EF-1 is struck). Run
-[`./examples/run_example.sh`](./examples/run_example.sh) to reproduce this.
+**`## User Story`** is regenerated every run from the *non-superseded* facts —
+it combines what they say and nothing more (EF-1 is struck, so "all persons"
+does not appear). **`## Established Facts`** is the evidence, each with its
+citation. Run [`./examples/run_example.sh`](./examples/run_example.sh) to see it
+on the checkout example.
 
 Tags a reviewer resolves later (Phase 3, not built here):
 `[NEEDS REVIEW]` — reconciliation was unclear;
