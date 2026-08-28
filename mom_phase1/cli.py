@@ -1,7 +1,7 @@
 """Interactive slash-command CLI for Phase 1.
 
     $ mom-phase1
-    mom> /requirements test_transcripts/call1.txt
+    mom> /requirements examples/delivery_call1.txt
     mom> /features
     mom> /exit
 
@@ -13,6 +13,7 @@ Slash commands
   /features              List the feature docs discovered under knowledge/.
   /show <feature>        Print a feature doc.
   /model                 Show which Ollama model is in use.
+  /skills                List all commands.
   /help                  Show this help.
   /exit                  Quit.
 
@@ -31,11 +32,34 @@ from .ollama_client import DEFAULT_MODEL, OllamaError
 _REQ_RE = re.compile(r"^/(?:requirements|extract)\s+(.+)$", re.IGNORECASE)
 _SHOW_RE = re.compile(r"^/show\s+(.+)$", re.IGNORECASE)
 
+# Single source of truth for the slash commands: (command, args, description).
+# Drives /skills, /help, and tab-completion.
+SKILLS = [
+    ("/requirements", "<file>", "Run Phase 1 on a transcript (.txt or .vtt): extract "
+                                "cited statements and merge them into the per-feature "
+                                "knowledge docs."),
+    ("/extract", "<file>", "Alias for /requirements."),
+    ("/features", "", "List the feature docs discovered under the knowledge dir."),
+    ("/show", "<feature>", "Print one feature doc (partial name match)."),
+    ("/model", "", "Show which Ollama model is in use."),
+    ("/skills", "", "List these commands."),
+    ("/help", "", "Show usage help."),
+    ("/exit", "", "Quit."),
+]
+
 BANNER = (
     f"mom-phase1 {__version__} — client-call -> requirements, Phase 1\n"
     f"model: {DEFAULT_MODEL}   docs: {DOCS_DIR}/\n"
-    f'Type /help for commands, /exit to quit.'
+    f'Type /skills for commands, /exit to quit.'
 )
+
+
+def _print_skills() -> None:
+    print("Available skills:")
+    width = max(len(f"{c} {a}".strip()) for c, a, _ in SKILLS)
+    for cmd, args, desc in SKILLS:
+        left = f"{cmd} {args}".strip()
+        print(f"  {left:<{width}}   {desc}")
 
 
 def run_phase1(path: str) -> None:
@@ -99,6 +123,9 @@ def _handle(line: str) -> bool:
     if line in ("/help", "/?", "help"):
         print(__doc__)
         return True
+    if line in ("/skills", "/commands", "skills"):
+        _print_skills()
+        return True
     if line in ("/features", "/list"):
         _list_features()
         return True
@@ -130,11 +157,7 @@ def _repl() -> None:
         from prompt_toolkit.completion import WordCompleter
 
         session = PromptSession(
-            completer=WordCompleter(
-                ["/requirements", "/extract", "/features", "/show", "/model",
-                 "/help", "/exit"],
-                sentence=True,
-            )
+            completer=WordCompleter([c for c, _, _ in SKILLS], sentence=True)
         )
         read = lambda: session.prompt(prompt)
     except ImportError:
