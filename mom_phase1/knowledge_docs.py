@@ -174,18 +174,40 @@ def discover_features(docs_dir=None):
 
 
 def _split_sections(doc_text: str):
-    sections = {"established_facts": "", "open_questions": "", "change_log": ""}
+    sections = {"user_story": "", "established_facts": "", "open_questions": "",
+                "change_log": ""}
     for m in re.finditer(r"^## (.+?)\n(.*?)(?=\n## |\Z)", doc_text,
                          re.DOTALL | re.MULTILINE):
         heading = m.group(1).strip().lower()
         body = m.group(2).strip()
-        if "established fact" in heading:
+        if "user story" in heading:
+            sections["user_story"] = body
+        elif "established fact" in heading:
             sections["established_facts"] = body
         elif "open question" in heading:
             sections["open_questions"] = body
         elif "change log" in heading:
             sections["change_log"] = body
     return sections
+
+
+def describe_features(docs_dir=None):
+    """``{feature_name: one-line description}`` -- the User Story if the doc
+    has one, else its first Established Fact summary. Feeds the canon step so
+    it can route a new area onto the right existing doc by content."""
+    out = {}
+    for name, path in discover_features(docs_dir).items():
+        try:
+            with open(path, encoding="utf-8") as f:
+                sec = _split_sections(f.read())
+        except OSError:
+            continue
+        desc = sec["user_story"].strip().splitlines()[0] if sec["user_story"] else ""
+        if not desc:
+            facts = _parse_established_facts(sec["established_facts"])
+            desc = facts[0]["summary"] if facts else name
+        out[name] = desc
+    return out
 
 
 def _parse_established_facts(body: str):
@@ -255,9 +277,10 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     Story" line from the non-superseded facts. If None, a mechanical join of
     the fact summaries is used.
 
-    ``canon_fn(names) -> {name: canonical}`` folds this call's fragmented
-    area names before routing. If None, a mechanical word-overlap fold is
-    used.
+    ``canon_fn(batch, existing) -> {name: canonical}`` folds this call's
+    fragmented area names and routes them onto existing docs, using each
+    name's statement summaries as context. If None, a mechanical
+    word-overlap fold is used.
     """
     docs_dir = docs_dir or DOCS_DIR
     os.makedirs(docs_dir, exist_ok=True)
@@ -265,10 +288,14 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     existing = discover_features(docs_dir)
     known = list(existing.keys())
 
-    # First fold near-duplicate feature names coined within THIS call, then
-    # route what's left onto an existing doc where one matches.
+    # First fold near-duplicate area names coined this call (with their
+    # statement summaries as context, and the existing docs as targets),
+    # then run the mechanical routing as a safety net.
     if canon_fn:
-        mapping = canon_fn(list(dict.fromkeys(s["feature"] for s in statements)))
+        batch = {}
+        for s in statements:
+            batch.setdefault(s["feature"], []).append(s["summary"])
+        mapping = canon_fn(batch, describe_features(docs_dir))
         for s in statements:
             s["feature"] = mapping.get(s["feature"], s["feature"])
     else:

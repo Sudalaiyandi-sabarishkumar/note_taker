@@ -25,7 +25,11 @@ _SYSTEM = (
     "The one rule that matters most: NO CITATION, NO STATEMENT. Every fact "
     "must be backed by an exact verbatim quote from the transcript part you "
     "are given. Never paraphrase, never combine sentences, never infer. If "
-    "you cannot point to the exact words, do not write the fact."
+    "you cannot point to the exact words, do not write the fact.\n"
+    "A statement is a requirement, decision, constraint, or fact ABOUT THE "
+    "PRODUCT being built. It is NOT: someone's reaction or opinion, a remark "
+    "about workload or scheduling, a greeting, or a meta-comment about the "
+    "call itself. \"That changes my week, in a good way\" is not a statement."
 )
 
 _FIELDS = ("feature", "summary", "quote", "speaker", "timestamp")
@@ -78,8 +82,17 @@ Rules for Feature -- read carefully, this is where extractions usually go wrong:
   still "Notifications", never "SMS Notifications" or "Switch to SMS". No
   parentheses, no "from X to Y", no verbs.
 
-Repeat for every distinct statement, however minor. If this part has only
-small talk or scheduling, output the single line: NO STATEMENTS
+If one sentence bundles two separable requirements (joined by "but",
+"however", "and", or ";"), emit a SEPARATE ## STATEMENT for each, and in
+each Quote copy only the clause that supports that statement -- e.g. "must
+work on mobile browsers, but a native app is out of scope" becomes two
+statements, one quoting "must work on mobile browsers" and one quoting "a
+native app is out of scope".
+
+Only extract requirements/decisions/constraints/facts about the product.
+Skip reactions, opinions, workload remarks, scheduling, and small talk.
+Repeat for every distinct statement, however minor. If this part has none,
+output the single line: NO STATEMENTS
 Output nothing before the first block or after the last."""
 
 
@@ -128,18 +141,16 @@ def _similarity(a: str, b: str) -> float:
 
 
 def _snap_quote(model_quote: str, spans, norm_spans, norm_transcript: str):
-    """Returns ``(quote, verified, score)``. A verbatim quote is upgraded to
-    the smallest span that contains it; a near quote is replaced with the
-    best-matching span when the match clears ``_SNAP_THRESHOLD``; otherwise
-    the model's quote is returned unchanged and unverified."""
+    """Returns ``(quote, verified, score)``. A quote that is already a
+    verbatim substring is kept as-is (so a deliberately-quoted single clause
+    stays a single clause); a near quote is replaced with the best-matching
+    transcript span when the match clears ``_SNAP_THRESHOLD``; otherwise the
+    model's quote is returned unchanged and unverified."""
     nq = _normalise(model_quote)
     if not nq:
         return model_quote, False, 0.0
     if nq in norm_transcript:
-        for span, nspan in zip(spans, norm_spans):
-            if nq in nspan:
-                return span, True, 1.0
-        return model_quote, True, 1.0
+        return model_quote.strip().strip('"').strip(), True, 1.0
     best_span, best_score = None, 0.0
     for span, nspan in zip(spans, norm_spans):
         score = _similarity(nq, nspan)
@@ -305,54 +316,65 @@ is NEW or DUPLICATE, never CHANGE."""
 
 
 # --------------------------------------------------------------------------
-# feature-name canonicalisation: fold a call's fragmented area names
+# feature-name canonicalisation: fold a call's fragmented area names, and
+# route them onto existing docs, using each name's actual content
 # --------------------------------------------------------------------------
 _CANON_SYSTEM = (
-    "You tidy a list of feature-area names extracted from one requirements "
-    "call. Some are near-duplicates naming the same broad area. You map each "
-    "name to a canonical area name. You never merge names that are genuinely "
-    "different areas."
+    "You assign each new feature-area name from a requirements call to a "
+    "canonical area. You are given what each new name actually covers (its "
+    "statements) and the areas that already exist. Fold near-duplicates "
+    "together and onto an existing area when they cover the same ground. "
+    "Never merge areas that are genuinely different -- 'Single Sign-On' and "
+    "'Interface Language' are different even though both touch login."
 )
 
 _CANON_LINE_RE = re.compile(r"^\s*(\d+)[.):]\s*(.+?)\s*$")
 
 
-def canonicalize_feature_names(names, model=None):
-    """One LLM call that folds a call's fragmented area names. Given
-    ``["Certificate Format", "Certificate Content", "Video Playback",
-    "Playback Speed"]`` it returns ``{"Certificate Format": "Certificates",
-    "Certificate Content": "Certificates", "Video Playback": "Video
-    Playback", "Playback Speed": "Video Playback"}``. On any failure it
-    returns an identity map, so the caller always gets something usable."""
-    names = list(dict.fromkeys(names))
+def canonicalize_feature_names(batch, existing=None, model=None):
+    """Fold this call's fragmented area names, with context.
+
+    ``batch``    -- ``{name: [statement summary, ...]}`` for the names the
+                    model coined this call.
+    ``existing`` -- ``{existing_doc_name: one-line description}`` (optional);
+                    a new name may be mapped onto one of these.
+
+    Returns ``{name: canonical}`` for every key in ``batch``. On any failure
+    it returns the identity map, so the caller always gets something usable.
+    """
+    names = list(batch)
     identity = {n: n for n in names}
-    if len(names) < 2:
+    existing = existing or {}
+    if len(names) < 2 and not existing:
         return identity
     model = model or DEFAULT_MODEL
-    numbered = "\n".join(f"{i}. {n}" for i, n in enumerate(names, 1))
-    prompt = f"""These feature-area names came from ONE requirements call. Some are
-near-duplicates that name the same broad area -- for example "Certificate
-Format" / "Certificate Content" / "Certificate Issuance" are all
-"Certificates"; "Playback Speed" / "Resume Position" are both "Video
-Playback".
 
-Names:
-{numbered}
+    exist_block = "\n".join(f"- {k}: {v}" for k, v in existing.items()) or "(none yet)"
+    new_block = "\n".join(
+        f"{i}. {n}\n   " + "\n   ".join(f"- {s}" for s in batch[n][:4])
+        for i, n in enumerate(names, 1)
+    )
+    prompt = f"""EXISTING feature areas (name: what it covers):
+{exist_block}
 
-Output exactly one line per name above, in the same order and numbering:
+NEW area names from this call, each with the statements that produced it:
+{new_block}
+
+For each NEW name (1..{len(names)}), output its canonical area on its own line:
 
 <n>. <canonical area name>
 
 Rules:
-- Names for the same broad area MUST get the identical canonical name.
-- Canonical names are short (1-2 words); reuse an input name where sensible.
-- A name with no duplicate maps to itself (cleaned up).
-- Never merge names that are genuinely different areas.
-- No text before line 1 or after the last line."""
+- If a new name covers the same ground as an EXISTING area, output that
+  existing area's name EXACTLY.
+- If several new names cover one area, give them the IDENTICAL canonical name.
+- Otherwise output a short (1-2 word) clean name for it.
+- Never merge genuinely different areas, even if their names look similar.
+- Exactly {len(names)} lines, numbered, nothing else."""
     try:
         raw = chat([{"role": "system", "content": _CANON_SYSTEM},
                     {"role": "user", "content": prompt}],
-                   model=model, show_progress=False, num_predict=800, temperature=0)
+                   model=model, show_progress=False, num_predict=900, temperature=0)
     except Exception:
         return identity
     mapping = {}
@@ -364,7 +386,6 @@ Rules:
         canon = m.group(2).strip().strip('"').strip()
         if 0 <= idx < len(names) and canon:
             mapping[names[idx]] = canon
-    # any name the model skipped keeps its original name
     for n in names:
         mapping.setdefault(n, n)
     return mapping
