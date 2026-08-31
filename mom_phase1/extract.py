@@ -14,6 +14,7 @@ that enforce "no citation, no statement" structurally:
   3. A timestamp is kept only if it literally appears in the source.
 """
 
+import os
 import re
 from difflib import SequenceMatcher
 
@@ -172,10 +173,78 @@ def parse_statement_blocks(text: str):
                     value = line[len(label):].strip()
                     if key == "quote":
                         value = value.strip().strip('"').strip()
+                    elif key == "feature":
+                        value = _decamel(value.strip('"').strip())
                     fields[key] = value
         if all(k in fields and fields[k] for k in _FIELDS):
             statements.append(fields)
     return statements
+
+
+# BUG 5 -- the model still extracts personal reactions / meta-comments about
+# the call ("that changes my week, in a good way") despite being told not to.
+# As a *whole extracted quote* these phrasings are essentially never a product
+# requirement, so drop the statement outright.
+_BANTER_RE = re.compile(
+    r"""\bmy\s+(week|day|days|schedule|workload|plate|life|team|year)\b
+      | \bchanges?\s+my\b
+      | \bin\s+a\s+good\s+way\b
+      | \b(i'm|i\s+am|we're|we\s+are)\s+(so\s+)?(excited|glad|happy|thrilled|relieved|pleased)\b
+      | \b(can't|cannot|can\s+not)\s+wait\b
+      | \blooking\s+forward\s+to\b
+      | \bgood\s+(news|to\s+hear)\b
+      | \bthanks?,?\s+(everyone|all|so\s+much|for)\b
+      | \bhow\s+(was|are|did|is)\s+(your|the|you)\b
+      | \b(survived|barely)\s+it\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+_SENT_END_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(])")
+
+# A short line that opens with an agreement word is a speaker echoing back what
+# was just said ("Yes, enforced order, same idea as modules.") -- an
+# acknowledgement, not a distinct requirement. Only drop the short ones;
+# a long sentence after "Yes," may carry real content.
+_REPLY_ECHO_RE = re.compile(
+    r"^\s*(yes|no|right|correct|understood|agreed|sure|okay|ok|exactly|"
+    r"indeed|noted|got\s+it|sounds\s+good|makes\s+sense)\b[\s,.:;-]",
+    re.IGNORECASE,
+)
+
+
+def _is_banter(quote: str) -> bool:
+    return bool(_BANTER_RE.search(quote or ""))
+
+
+def _is_reply_echo(quote: str) -> bool:
+    q = (quote or "").strip()
+    return bool(_REPLY_ECHO_RE.match(q)) and len(q.split()) <= 11
+
+
+def _unbundle(statement: dict, norm_transcript: str):
+    """If the Quote already verifies as one contiguous span, return the
+    statement unchanged. Otherwise, if it is 2+ sentences and each on its own
+    verifies against the transcript, split it: one statement per sentence,
+    the sentence text becoming its own Summary (the quote stays ground
+    truth). Sentences that don't verify are dropped here and the leftover is
+    handled by the normal verify/snap path."""
+    q = statement["quote"]
+    if _normalise(q) in norm_transcript:
+        return [statement]
+    parts = [p.strip() for p in _SENT_END_RE.split(q) if p.strip()]
+    if len(parts) < 2:
+        return [statement]
+    verified_parts = [p for p in parts if _normalise(p) in norm_transcript]
+    if len(verified_parts) < 2:
+        return [statement]  # not a clean multi-quote bundle; let snap try
+    out = []
+    for p in verified_parts:
+        piece = dict(statement)
+        piece["quote"] = p
+        piece["summary"] = p.rstrip(".!?") + "."
+        out.append(piece)
+    return out
 
 
 def extract_statements(transcript_text: str, known_features, model=None,
@@ -213,21 +282,26 @@ def extract_statements(transcript_text: str, known_features, model=None,
 
     spans = _candidate_spans(transcript_text)
     norm_spans = [_normalise(sp) for sp in spans]
+
+    kept = []
     for s in found:
-        snapped, verified, score = _snap_quote(
-            s["quote"], spans, norm_spans, norm_transcript)
-        if snapped != s["quote"]:
-            s["quote_as_extracted"] = s["quote"]
-            s["quote"] = snapped
-        s["verified"] = verified
-        s["match_score"] = round(score, 2)
-        # The model fabricates timestamps on plain-text transcripts that have
-        # none. Only keep a timestamp that literally appears in the source;
-        # anything else is an ungrounded citation detail -> drop it.
-        ts = s.get("timestamp", "").strip()
-        if ts and ts.lower() != "not available" and ts not in transcript_text:
-            s["timestamp"] = "not available"
-    return found
+        if _is_banter(s["quote"]) or _is_reply_echo(s["quote"]):
+            continue  # reaction, meta-comment, or bare acknowledgement
+        # A model that jammed several transcript sentences into one Quote is
+        # unbundled here so each real sentence becomes its own statement.
+        for piece in _unbundle(s, norm_transcript):
+            snapped, verified, score = _snap_quote(
+                piece["quote"], spans, norm_spans, norm_transcript)
+            if snapped != piece["quote"]:
+                piece["quote_as_extracted"] = piece["quote"]
+                piece["quote"] = snapped
+            piece["verified"] = verified
+            piece["match_score"] = round(score, 2)
+            ts = piece.get("timestamp", "").strip()
+            if ts and ts.lower() != "not available" and ts not in transcript_text:
+                piece["timestamp"] = "not available"
+            kept.append(piece)
+    return kept
 
 
 # --------------------------------------------------------------------------
@@ -320,87 +394,324 @@ is NEW or DUPLICATE, never CHANGE."""
 # route them onto existing docs, using each name's actual content
 # --------------------------------------------------------------------------
 _CANON_SYSTEM = (
-    "You assign each new feature-area name from a requirements call to a "
-    "canonical area. You are given what each new name actually covers (its "
-    "statements) and the areas that already exist. Fold near-duplicates "
-    "together and onto an existing area when they cover the same ground. "
-    "Never merge areas that are genuinely different -- 'Single Sign-On' and "
-    "'Interface Language' are different even though both touch login."
+    "You file each requirement statement under a feature area. Reuse an "
+    "existing area whenever a statement plausibly belongs to it. Only put "
+    "two statements in the same area when they are clearly the same topic; "
+    "keep separate concerns apart -- a delivery radius and payment methods "
+    "are different areas even in the same call, as are login/SSO vs "
+    "interface language, pricing vs enrollment, proctoring vs publishing."
 )
 
-_CANON_LINE_RE = re.compile(r"^\s*(\d+)[.):]\s*(.+?)\s*$")
+_CANON_LINE_RE = re.compile(r"^\s*(\d+)\s*[=.):\-]+\s*(.+?)\s*$")
+_CAMEL_1 = re.compile(r"([a-z0-9])([A-Z])")
+_CAMEL_2 = re.compile(r"([A-Z]+)([A-Z][a-z])")
 
 
-def canonicalize_feature_names(batch, existing=None, model=None):
-    """Fold this call's fragmented area names, with context.
+def _decamel(text):
+    """"DeliveryRadius" -> "Delivery Radius", "SSOConfig" -> "SSO Config".
+    A collapsed name tokenises as one word and won't match an existing
+    doc, so the model's PascalCase output is split back into words."""
+    text = _CAMEL_2.sub(r"\1 \2", text)
+    text = _CAMEL_1.sub(r"\1 \2", text)
+    return re.sub(r"\s+", " ", text).strip()
 
-    ``batch``    -- ``{name: [statement summary, ...]}`` for the names the
-                    model coined this call.
-    ``existing`` -- ``{existing_doc_name: one-line description}`` (optional);
-                    a new name may be mapped onto one of these.
 
-    Returns ``{name: canonical}`` for every key in ``batch``. On any failure
-    it returns the identity map, so the caller always gets something usable.
+def _sig_words(text):
+    """4+ char, non-filler, stemmed words -- the tokens that could link two
+    areas."""
+    out = set()
+    for w in _WORD_RE.findall(text.lower()):
+        w = _stem(w)
+        if len(w) >= 4 and w not in _STORY_STOPWORDS and w not in _GENERIC_WORDS:
+            out.add(w)
+    return out
+
+
+def _clean_area(text):
+    text = text.strip().strip('"').strip("*").strip()
+    text = text.split(" (")[0].split(" -- ")[0].strip()  # drop echoed hints
+    # "NEW:" may be leading (a proposed new area) or mid-string (the model
+    # echoed the template). If there's a real name before it, that's the
+    # answer; otherwise take what follows.
+    m = re.search(r"\bNEW\s*:\s*", text, re.IGNORECASE)
+    if m:
+        before, after = text[:m.start()].strip(), text[m.end():].strip()
+        text = before or after
+    words = [w for w in _decamel(text).split() if w]
+    return " ".join(words[:4])
+
+
+_LEADING_VERBS = {
+    "send", "add", "adding", "show", "display", "provide", "change", "changed",
+    "enable", "allow", "let", "make", "give", "set", "use", "support",
+    "receive", "ensure", "create", "build", "keep", "bump", "drop", "remove",
+    "increase", "decrease", "reduce", "update", "require", "include", "have",
+    "want", "need", "define", "specify", "confirm", "confirmed",
+}
+
+
+def _area_from_summary(summary, fallback):
+    toks = _WORD_RE.findall(summary.lower())
+    while toks and toks[0] in (_LEADING_VERBS | _STORY_STOPWORDS):
+        toks = toks[1:]
+    sig = [w for w in toks
+           if len(w) >= 4 and w not in _STORY_STOPWORDS and w not in _GENERIC_WORDS
+           and w not in _LEADING_VERBS]
+    return " ".join(w.title() for w in sig[:2]) or fallback
+
+
+def canonicalize_statements(statements, existing=None, model=None):
+    """Assign each statement to a feature area. Returns a list of area names
+    parallel to ``statements``. ``existing`` is ``{area: one-line
+    description}``; an assignment may reuse one of those.
+
+    Guards: an assignment onto an existing area that shares no distinctive
+    word with the statement is rejected (kept as its own area). Any failure
+    falls back to the statement's own extracted feature name.
     """
-    names = list(batch)
-    identity = {n: n for n in names}
     existing = existing or {}
-    if len(names) < 2 and not existing:
-        return identity
+    n = len(statements)
+    fallback = [s.get("feature", "") or _area_from_summary(s["summary"], "Misc")
+                for s in statements]
+    if n == 0 or (n < 2 and not existing):
+        return fallback
     model = model or DEFAULT_MODEL
 
     exist_block = "\n".join(f"- {k}: {v}" for k, v in existing.items()) or "(none yet)"
-    new_block = "\n".join(
-        f"{i}. {n}\n   " + "\n   ".join(f"- {s}" for s in batch[n][:4])
-        for i, n in enumerate(names, 1)
+    stmt_block = "\n".join(
+        f"{i}. [{s.get('feature', '?')}] {s['summary']}"
+        for i, s in enumerate(statements, 1)
     )
-    prompt = f"""EXISTING feature areas (name: what it covers):
+    prompt = f"""EXISTING areas (name: what it covers):
 {exist_block}
 
-NEW area names from this call, each with the statements that produced it:
-{new_block}
+STATEMENTS from this call:
+{stmt_block}
 
-For each NEW name (1..{len(names)}), output its canonical area on its own line:
+For each statement 1..{n}, write one line:
 
-<n>. <canonical area name>
+<number> = <area>
+
+<area> is an EXISTING area name copied EXACTLY, or  NEW: <short 2-3 word name>.
+Write nothing else on the line -- no explanation, no parentheses.
 
 Rules:
-- If a new name covers the same ground as an EXISTING area, output that
-  existing area's name EXACTLY.
-- If several new names cover one area, give them the IDENTICAL canonical name.
-- Otherwise output a short (1-2 word) clean name for it.
-- Never merge genuinely different areas, even if their names look similar.
-- Exactly {len(names)} lines, numbered, nothing else."""
+- If a statement clearly belongs to an EXISTING area, reuse that name.
+- Give a statement its OWN area unless it is plainly the same topic as
+  another statement here -- do not lump distinct concerns together (a
+  delivery radius and payment methods are different areas; a quiz pass mark
+  and a certificate are different areas).
+- Only combine statements that are facets of one narrow topic (a catalog
+  page + its search + its bookmark button; a pass mark + retry limit +
+  lockout).
+Output exactly {n} lines."""
     try:
         raw = chat([{"role": "system", "content": _CANON_SYSTEM},
                     {"role": "user", "content": prompt}],
-                   model=model, show_progress=False, num_predict=900, temperature=0)
+                   model=model, show_progress=False, num_predict=1000, temperature=0)
     except Exception:
-        return identity
-    mapping = {}
+        return fallback
+
+    assigned = list(fallback)
+    exist_lower = {k.lower(): k for k in existing}
     for line in strip_think(raw).splitlines():
         m = _CANON_LINE_RE.match(line)
         if not m:
             continue
         idx = int(m.group(1)) - 1
-        canon = m.group(2).strip().strip('"').strip()
-        if 0 <= idx < len(names) and canon:
-            mapping[names[idx]] = canon
-    for n in names:
-        mapping.setdefault(n, n)
-    return mapping
+        area = _clean_area(m.group(2))
+        if not (0 <= idx < n) or not area:
+            continue
+        assigned[idx] = exist_lower.get(area.lower(), area)
+
+    # anti-misroute guard, per statement
+    for i, area in enumerate(assigned):
+        if area not in existing:
+            continue
+        src = statements[i]["summary"].lower()
+        tgt = (area + " " + existing.get(area, "")).lower()
+        connected = (any(w in tgt for w in _sig_words(src))
+                     or any(w in src for w in _sig_words(area)))
+        if not connected:
+            # The route is wrong and the extracted feature name was the thing
+            # that got mis-grouped -- don't trust it either. Name the area from
+            # the statement itself so the mechanical router can't re-merge it.
+            own = statements[i].get("feature", "")
+            keep_own = (own and own not in existing
+                        and bool(_sig_words(own) & _sig_words(src)))
+            assigned[i] = own if keep_own else _area_from_summary(src, own or "Misc")
+
+    # Consolidate near-duplicate NEW area names coined within THIS batch
+    # (e.g. "Final Exams" and "Exams" from two statements about the same
+    # thing) so they land in one doc, not two.
+    new_areas = list(dict.fromkeys(a for a in assigned if a not in existing))
+    canon_new = {}
+    for a in new_areas:
+        wa = _sig_words(a)
+        hit = next((c for c in canon_new.values()
+                    if wa and (wa <= _sig_words(c) or _sig_words(c) <= wa
+                               or len(wa & _sig_words(c)) / len(wa | _sig_words(c)) >= 0.5)),
+                   None)
+        canon_new[a] = hit or a
+    assigned = [canon_new.get(a, a) for a in assigned]
+
+    if os.environ.get("MOM_DEBUG"):
+        import json
+        with open(os.environ["MOM_DEBUG"], "a") as _f:
+            _f.write("=== CANON ===\nexisting: " + json.dumps(list(existing)) + "\n")
+            _f.write("statements:\n" + stmt_block + "\n")
+            _f.write("raw:\n" + strip_think(raw) + "\n")
+            _f.write("assigned: " + json.dumps(assigned) + "\n\n")
+    return assigned
+
+
+# --------------------------------------------------------------------------
+# Layer 2: propose which existing docs name the same broad area
+# --------------------------------------------------------------------------
+_MERGE_SYSTEM = (
+    "You review a knowledge base of feature-area docs and spot the ones that "
+    "were fragmented -- several thin docs that are really facets of ONE broad "
+    "feature. A doc describing a page, its search, and a bookmark button are "
+    "one feature. Ratings, reviews, and review moderation are one feature. "
+    "Draft/publish, post-publish editing, and instructor assignment are one "
+    "'Course Publishing'. Be decisive: in a list of 20+ docs there are "
+    "usually several such groups. But never merge genuinely different "
+    "concerns (login vs interface, pricing vs enrollment, payments vs "
+    "notifications, quizzes vs certificates)."
+)
+
+_MERGE_LINE_RE = re.compile(r"^\s*MERGE\s*:\s*([\d,\s+&]+?)\s*=>\s*(\d+)\s*$", re.IGNORECASE)
+_NUM_RE = re.compile(r"\d+")
+
+
+def propose_doc_merges(descs, model=None):
+    """``descs`` is ``{doc_name: one-line description}``. Returns a list of
+    groups; each group is ``[canonical, member, member, ...]`` naming docs
+    that should be combined. Empty on 'nothing to merge' or any failure.
+
+    Docs are numbered and the model answers in numbers -- it cannot
+    hallucinate a doc that isn't in the list.
+    """
+    names = list(descs)
+    if len(names) < 4:
+        return []
+    model = model or DEFAULT_MODEL
+    block = "\n".join(f"{i}. {k} -- {v}" for i, (k, v) in enumerate(descs.items(), 1))
+    prompt = f"""Feature-area docs in the knowledge base ({len(names)} of them):
+{block}
+
+Several are fragments of ONE broader feature. Output EVERY merge, one per
+line, using the NUMBERS above and nothing else:
+
+MERGE: <n> + <n> [+ <n> ...] => <n>
+
+The number after "=>" is the doc to keep (it must be one of the numbers
+before "=>"). Fragmentation patterns to look for:
+- a thing + its search + its filter + its bookmark/save
+- ratings + reviews + review moderation
+- draft/publish rules + post-publish editing + instructor assignment
+- a default limit + a cap + a waitlist
+- two docs that are just two names for the same noun (e.g. an area and that area "... Cap")
+NEVER merge distinct concerns: login/SSO vs interface language, pricing vs
+enrollment, proctoring vs publishing, payments vs notifications, quizzes vs
+certificates.
+A list this size usually has 3-6 merges. If truly none, output: NONE"""
+    try:
+        raw = chat([{"role": "system", "content": _MERGE_SYSTEM},
+                    {"role": "user", "content": prompt}],
+                   model=model, show_progress=False, num_predict=800, temperature=0)
+    except Exception:
+        return []
+
+    groups = []
+    for line in strip_think(raw).splitlines():
+        m = _MERGE_LINE_RE.match(line)
+        if not m:
+            continue
+        idxs = [int(x) - 1 for x in _NUM_RE.findall(m.group(1))]
+        canon_idx = int(m.group(2)) - 1
+        members = [names[i] for i in dict.fromkeys(idxs) if 0 <= i < len(names)]
+        members = list(dict.fromkeys(members))
+        if len(members) < 2:
+            continue
+        if 0 <= canon_idx < len(names) and names[canon_idx] in members:
+            members.remove(names[canon_idx])
+            members.insert(0, names[canon_idx])
+        groups.append(members)
+
+    if os.environ.get("MOM_DEBUG"):
+        with open(os.environ["MOM_DEBUG"], "a") as _f:
+            _f.write("=== MERGE PROPOSAL ===\n" + strip_think(raw)
+                     + "\nparsed: " + repr(groups) + "\n\n")
+    return groups
+
+
+# --------------------------------------------------------------------------
+# ask: answer a question strictly from the knowledge docs
+# --------------------------------------------------------------------------
+_ASK_SYSTEM = (
+    "You answer questions about product requirements using ONLY the feature "
+    "docs provided. Every doc lists Established Facts (each with an EF "
+    "number, a verbatim client quote, the speaker, and the source call + "
+    "date), a Change Log, and any superseded facts marked '[superseded by "
+    "EF-N]'. Ground every claim in that material: cite the EF number and the "
+    "source call/date, and quote the client where relevant. To say what was "
+    "used BEFORE a change, look at the superseded fact and the Change Log's "
+    "'was:' line. If the docs do not contain the answer, say exactly: "
+    "\"The docs don't record that.\" Never guess or add outside knowledge."
+)
+
+
+def _doc_score(question_words, doc_text, doc_name):
+    body = _content_words(doc_name) | _content_words(doc_text)
+    return len(question_words & body)
+
+
+def answer_question(question, doc_texts, model=None):
+    """``doc_texts`` is ``{feature_name: full_markdown}``. Picks the docs most
+    relevant to ``question`` and asks the model to answer from them only.
+    Returns the answer string (or a 'name a feature' hint)."""
+    if not doc_texts:
+        return "No feature docs yet -- run /requirements on a transcript first."
+    qwords = _content_words(question)
+    ranked = sorted(doc_texts.items(),
+                    key=lambda kv: _doc_score(qwords, kv[1], kv[0]),
+                    reverse=True)
+    top = [(n, t) for n, t in ranked if _doc_score(qwords, t, n) > 0][:3]
+    if not top:
+        names = ", ".join(sorted(doc_texts))
+        return (f"Couldn't tell which feature you mean. Name one in the "
+                f"question, or pick from: {names}")
+
+    context = "\n\n".join(f"===== {n} =====\n{t}" for n, t in top)
+    prompt = (f"Feature docs:\n\n{context}\n\n"
+              f"Question: {question}\n\n"
+              f"Answer using only the docs above, citing EF numbers and "
+              f"source calls/dates.")
+    try:
+        raw = chat([{"role": "system", "content": _ASK_SYSTEM},
+                    {"role": "user", "content": prompt}],
+                   model=model or DEFAULT_MODEL, show_progress=False,
+                   num_ctx=8192, num_predict=700, temperature=0)
+    except Exception as exc:
+        return f"(model error: {exc})"
+    ans = strip_think(raw).strip()
+    used = ", ".join(n for n, _ in top)
+    return f"{ans}\n\n— from: {used}"
 
 
 # --------------------------------------------------------------------------
 # user story: one plain-language synthesis of a feature's CURRENT facts
 # --------------------------------------------------------------------------
 _STORY_SYSTEM = (
-    "You restate a feature's already-confirmed requirements as one short "
-    "plain-language description of how the feature currently works. Use ONLY "
-    "the words and facts you are given. Never add a detail, a channel, a "
-    "number, a role, or a capability that is not written in the facts. If two "
-    "facts overlap, merge them; if they do not, just state both. Every fact "
-    "you are given is currently true."
+    "You turn a feature's confirmed requirements into ONE user story in the "
+    "form: \"As a <role>, I want <capability>, so that <benefit>.\" Use ONLY "
+    "what the facts state. Infer <role> from who the requirement serves "
+    "(customer, learner, admin, instructor, manager...). Include the \"so "
+    "that <benefit>\" clause ONLY if a benefit is actually stated in the "
+    "facts; otherwise end after the capability. Never invent a channel, "
+    "number, name, benefit, or capability that is not in the facts. If there "
+    "are several capabilities, join them in one story with 'and'."
 )
 
 _STORY_STOPWORDS = {
@@ -411,14 +722,28 @@ _STORY_STOPWORDS = {
     "customer", "customers", "feature", "system", "currently", "works", "work",
     "lets", "let", "pickup", "provide", "ensure", "allow", "include", "make",
     "using", "used", "use", "able", "then", "into", "over", "up",
+    # user-story scaffolding -- not "content" that could be hallucinated
+    "want", "see", "know", "learner", "role", "benefit", "story", "need",
+    "so", "that", "able", "view",
 }
 _WORD_RE = re.compile(r"[a-z0-9]+")
 
+# Product/SaaS filler that is never a distinctive link between two areas.
+_GENERIC_WORDS = {
+    "course", "learner", "student", "user", "customer", "admin", "instructor",
+    "manager", "page", "screen", "view", "button", "field", "form", "flow",
+    "process", "management", "support", "service", "option", "setting", "data",
+    "app", "product", "item", "list", "detail", "section", "area", "module",
+    "feature", "system", "platform", "content", "info", "information", "tool",
+}
+
 
 def _stem(w):
-    for suf in ("ing", "ed", "es", "s"):
+    for suf in ("ing", "ed"):
         if w.endswith(suf) and len(w) - len(suf) >= 3:
             return w[: -len(suf)]
+    if w.endswith("s") and len(w) >= 4:          # courses->course, buses->buse (fine)
+        return w[:-1]
     return w
 
 
@@ -428,24 +753,27 @@ def _content_words(text):
 
 
 def synthesize_user_story(feature, active_facts, model=None):
-    """Return a short plain-language description of the CURRENT agreed
-    behaviour of ``feature``, derived strictly from ``active_facts`` (the
-    non-superseded Established Facts). Guardrails:
+    """Return ONE user story ("As a <role>, I want <capability>[, so that
+    <benefit>].") for the feature's CURRENT (non-superseded) facts.
 
-      * 0 facts   -> a fixed placeholder.
-      * 1 fact    -> that fact's summary verbatim (no model call -- there is
-                     nothing to synthesise and nothing to hallucinate).
-      * 2+ facts  -> one model call to merge them; the result is rejected
-                     (fall back to a mechanical join) if the model call
-                     fails, or if the story introduces content words that
-                     appear in none of the facts.
+    One model call, grounded strictly in ``active_facts``. Falls back to a
+    mechanical "As a user, I want ..." built from the fact summaries if the
+    call fails or the result introduces content not in the facts.
     """
     if not active_facts:
         return "No confirmed requirements yet."
-    fallback = "; ".join(f["summary"].rstrip(".") for f in active_facts) + "."
-    if len(active_facts) == 1:
-        s = active_facts[0]["summary"].strip()
-        return s if s.endswith((".", "!", "?")) else s + "."
+
+    def _cap_phrase(text):
+        toks = text.strip().rstrip(".").split()
+        if toks and toks[0].lower() in _LEADING_VERBS:
+            toks = toks[1:]
+        if not toks:
+            return text.strip().rstrip(".")
+        return toks[0][0].lower() + " ".join(toks)[1:]
+
+    fallback = ("As a user, I want "
+                + " and ".join(_cap_phrase(f["summary"]) for f in active_facts[-3:])
+                + ".")
 
     facts_block = "\n".join(f'- {f["summary"]} (exact words: "{f["quote"]}")'
                             for f in active_facts)
@@ -454,25 +782,28 @@ def synthesize_user_story(feature, active_facts, model=None):
 Confirmed facts, all currently true:
 {facts_block}
 
-Write 1 to 3 sentences describing how "{feature}" currently works. Use ONLY the
-information in the facts above. Do not introduce any channel, number, name,
-role, or capability that is not written there. Where facts overlap, combine
-them into one statement. Output only the sentences, nothing else."""
+Write ONE user story: "As a <role>, I want <capability>, so that <benefit>."
+- <role>: whoever the requirement serves, inferred from the facts.
+- <capability>: what the facts say the product does. Combine multiple facts
+  with "and".
+- ", so that <benefit>": include ONLY if a benefit is stated in the facts;
+  otherwise end the sentence after <capability>.
+Use only the facts above -- no invented detail. Output only the story."""
     try:
         raw = chat(
             [{"role": "system", "content": _STORY_SYSTEM},
              {"role": "user", "content": prompt}],
             model=model or DEFAULT_MODEL, show_progress=False,
-            num_predict=400, temperature=0,
+            num_predict=300, temperature=0,
         )
     except Exception:
         return fallback
     story = strip_think(raw).strip().strip('"').strip()
-    for lead in ("Sure,", "Here is", "Here's", "The feature", "Summary:", "User story:"):
-        if story.startswith(lead):
+    for lead in ("Sure,", "Here is", "Here's", "User story:", "Story:"):
+        if story.lower().startswith(lead.lower()):
             story = story.split(":", 1)[-1].strip() if ":" in story[:40] else fallback
             break
-    if not story:
+    if not story or "as a" not in story.lower()[:12]:
         return fallback
 
     # Structural guard: the story may not bring in content words that appear

@@ -203,10 +203,15 @@ def describe_features(docs_dir=None):
         except OSError:
             continue
         desc = sec["user_story"].strip().splitlines()[0] if sec["user_story"] else ""
-        if not desc:
-            facts = _parse_established_facts(sec["established_facts"])
-            desc = facts[0]["summary"] if facts else name
-        out[name] = desc
+        facts = _parse_established_facts(sec["established_facts"])
+        # Append the first fact's verbatim quote -- model-written summaries
+        # sometimes drift ("...and payment methods" on a radius fact) and
+        # that drift is what lets a statement misroute; the quote is the
+        # client's actual words and is reliable.
+        if facts:
+            q = facts[0]["quote"]
+            desc = f"{desc} {q}".strip() if desc else facts[0]["summary"] + " " + q
+        out[name] = desc or name
     return out
 
 
@@ -277,10 +282,9 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     Story" line from the non-superseded facts. If None, a mechanical join of
     the fact summaries is used.
 
-    ``canon_fn(batch, existing) -> {name: canonical}`` folds this call's
-    fragmented area names and routes them onto existing docs, using each
-    name's statement summaries as context. If None, a mechanical
-    word-overlap fold is used.
+    ``canon_fn(statements, existing) -> [area, ...]`` assigns each statement
+    to a broad feature area (parallel list), reusing existing docs. If None,
+    a mechanical word-overlap fold of the extracted names is used.
     """
     docs_dir = docs_dir or DOCS_DIR
     os.makedirs(docs_dir, exist_ok=True)
@@ -288,16 +292,13 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     existing = discover_features(docs_dir)
     known = list(existing.keys())
 
-    # First fold near-duplicate area names coined this call (with their
-    # statement summaries as context, and the existing docs as targets),
+    # Assign each statement to a broad area (per-statement, so a badly-named
+    # extraction that bundled unrelated statements can still be split apart),
     # then run the mechanical routing as a safety net.
-    if canon_fn:
-        batch = {}
-        for s in statements:
-            batch.setdefault(s["feature"], []).append(s["summary"])
-        mapping = canon_fn(batch, describe_features(docs_dir))
-        for s in statements:
-            s["feature"] = mapping.get(s["feature"], s["feature"])
+    if canon_fn and statements:
+        areas = canon_fn(statements, describe_features(docs_dir))
+        for s, a in zip(statements, areas):
+            s["feature"] = a or s["feature"]
     else:
         canonicalize_batch_features(statements)
     for s in statements:
@@ -375,20 +376,47 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 n_dup += 1
 
             elif verdict == "CHANGE" and target is not None:
-                # Keep the old fact, mark it superseded, add the new one --
-                # the Established Facts section stays complete and glanceable.
-                target["superseded_by"] = next_id
+                same_call = f"source: {source_name}," in target["attribution"]
+                connected = bool(
+                    _mwords(s["summary"] + " " + s["quote"])
+                    & _mwords(target["summary"] + " " + target["quote"]))
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
-                extra_log.append(
-                    f'- {today}: EF-{target_id} for "{feature}" superseded by '
-                    f'EF-{next_id} (from {source_name}).{reason_txt}\n'
-                    f'  - was: *"{target["quote"]}"* — {target["attribution"]}\n'
-                    f'  - now: *"{s["quote"]}"* — {attribution}'
-                )
+                if same_call or not connected:
+                    # same_call: a speaker doesn't reverse their own requirement
+                    # inside one call. not connected: the "change" shares no
+                    # word with the fact it supposedly overrides -- almost
+                    # always a misroute. Either way, keep both, supersede
+                    # nothing, and flag it.
+                    why = ("both are from the same call" if same_call
+                           else "it shares no wording with EF-"
+                                f"{target_id}, so this may be a misfiled statement")
+                    new_questions.append(
+                        f'- **{q_id}** [NEEDS REVIEW]: {source_name} statement for '
+                        f'"{feature}" was flagged as changing EF-{target_id}, but '
+                        f'{why}. Confirm whether it belongs here.{reason_txt}\n'
+                        f'  - New: *"{s["quote"]}"* — {attribution}\n'
+                        f'  - EF-{target_id}: *"{target["quote"]}"* — {target["attribution"]}'
+                    )
+                    extra_log.append(
+                        f'- {today}: EF-{next_id} added for "{feature}" from '
+                        f'{source_name} (reconciler said CHANGE vs EF-{target_id}; '
+                        f'not applied -- {why}).'
+                    )
+                    n_review += 1
+                else:
+                    # Keep the old fact, mark it superseded, add the new one --
+                    # the Established Facts section stays complete.
+                    target["superseded_by"] = next_id
+                    extra_log.append(
+                        f'- {today}: EF-{target_id} for "{feature}" superseded by '
+                        f'EF-{next_id} (from {source_name}).{reason_txt}\n'
+                        f'  - was: *"{target["quote"]}"* — {target["attribution"]}\n'
+                        f'  - now: *"{s["quote"]}"* — {attribution}'
+                    )
+                    n_change += 1
                 next_id += 1
-                n_change += 1
 
             else:  # UNCLEAR, no reconcile callback, or a stale target id
                 existing_summary = "; ".join(
@@ -428,3 +456,163 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
             f"{n_review} to review, {n_unverified} unverified  ->  {path}"
         )
     return summary
+
+
+# --------------------------------------------------------------------------
+# Layer 2: consolidation -- fold fragmented docs together after a run
+# --------------------------------------------------------------------------
+_MERGE_STOP = {"the", "a", "an", "and", "or", "of", "to", "in", "on", "for",
+               "course", "learner", "user", "admin", "instructor", "page",
+               "feature", "system", "content", "with", "by", "is", "are"}
+
+
+def _mwords(text):
+    return {w[:-1] if len(w) > 4 and w.endswith("s") else w
+            for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+            if w not in _MERGE_STOP}
+
+
+def _read_doc(path):
+    with open(path, encoding="utf-8") as f:
+        sec = _split_sections(f.read())
+    return sec, _parse_established_facts(sec["established_facts"])
+
+
+def suggest_merges(groups, docs_dir=None):
+    """Turn LLM-proposed merge groups into human-readable suggestion lines.
+    Nothing is written. Groups whose members don't share a distinctive word
+    with the canonical are dropped (the 7B proposes some nonsense on a big
+    list)."""
+    docs_dir = docs_dir or DOCS_DIR
+    feats = discover_features(docs_dir)
+    out = []
+    for group in groups:
+        members = [g for g in dict.fromkeys(group) if g in feats]
+        if len(members) < 2:
+            continue
+        canonical = members[0]
+        _, cf = _read_doc(feats[canonical])
+        cw = _mwords(canonical + " " + (cf[0]["summary"] if cf else ""))
+        keep = [canonical]
+        for m in members[1:]:
+            _, mf = _read_doc(feats[m])
+            if _mwords(m + " " + (mf[0]["summary"] if mf else "")) & cw:
+                keep.append(m)
+        if len(keep) >= 2:
+            out.append("  /merge " + " ".join(f'"{k}"' for k in keep))
+    return out
+
+
+def apply_merges(groups, docs_dir=None, story_fn=None, explicit=False):
+    """``groups`` is a list of ``[canonical, member, ...]`` name lists.
+    Combine each group's docs into the first, keeping every fact and
+    citation, and delete the rest.
+
+    With ``explicit=False`` (an automated suggestion) two safety checks
+    apply: members that share no distinctive word with the canonical are
+    skipped, and a group with 2+ multi-fact members is left as a suggestion.
+    With ``explicit=True`` (a user's ``/merge``) both checks are bypassed.
+
+    Returns a list of human-readable result lines.
+    """
+    docs_dir = docs_dir or DOCS_DIR
+    feats = discover_features(docs_dir)
+    today = date.today().isoformat()
+    results = []
+
+    for group in groups:
+        members = [g for g in dict.fromkeys(group) if g in feats]
+        if len(members) < 2:
+            continue
+        canonical = group[0] if group[0] in feats else members[0]
+        if canonical not in members:
+            members = [canonical] + members if canonical in feats else members
+            canonical = members[0]
+
+        if not explicit:
+            # Lexical sanity: only merge members that share a distinctive
+            # word with the canonical (its name + first fact).
+            _, cfacts = _read_doc(feats[canonical])
+            canon_words = _mwords(canonical + " " + (cfacts[0]["summary"] if cfacts else ""))
+            kept_members = [canonical]
+            for m in members[1:]:
+                _, mf = _read_doc(feats[m])
+                mw = _mwords(m + " " + (mf[0]["summary"] if mf else ""))
+                if mw & canon_words:
+                    kept_members.append(m)
+                else:
+                    results.append(
+                        f"- skipped: '{m}' not merged into '{canonical}' "
+                        f"(no shared topic word)"
+                    )
+            members = kept_members
+            if len(members) < 2:
+                continue
+
+        counts = {}
+        for m in members:
+            _, mf = _read_doc(feats[m])
+            counts[m] = len(mf)
+        substantial = [m for m in members if counts[m] > 1]
+        if not explicit and len(substantial) > 1:
+            results.append(
+                f"- suggested (not applied): merge {', '.join(members)} "
+                f"-- 2+ have multiple facts, review by hand"
+            )
+            continue
+
+        target = canonical if canonical in members else max(members, key=counts.get)
+        all_facts, oq_parts, cl_parts = [], [], []
+        next_id = 1
+        for m in members:
+            sec, facts = _read_doc(feats[m])
+            idmap = {}
+            base = len(all_facts)
+            for fct in facts:
+                idmap[fct["id"]] = next_id
+                fct = dict(fct)
+                fct["id"] = next_id
+                all_facts.append(fct)
+                next_id += 1
+            for fct in all_facts[base:]:
+                if fct["superseded_by"] is not None:
+                    fct["superseded_by"] = idmap.get(fct["superseded_by"])
+            oq = sec["open_questions"].strip()
+            if oq and oq.lower() not in ("- none.", "none", "none.", ""):
+                oq_parts.append(oq)
+            if sec["change_log"].strip():
+                cl_parts.append(sec["change_log"].strip())
+
+        seen, cl_lines = set(), []
+        for part in cl_parts:
+            for ln in part.splitlines():
+                if ln and ln not in seen:
+                    seen.add(ln)
+                    cl_lines.append(ln)
+        merged_from = [m for m in members if m != target]
+        cl_lines.append(
+            f"- {today}: consolidated {', '.join(repr(m) for m in merged_from)} "
+            f"into \"{target}\""
+        )
+
+        active = _active(all_facts)
+        if story_fn:
+            story = story_fn(target, active)
+        else:
+            story = ("; ".join(f["summary"].rstrip(".") for f in active) + "."
+                     if active else "No confirmed requirements yet.")
+
+        doc_text = _render(target, all_facts, [], "\n\n".join(oq_parts),
+                           "\n".join(cl_lines[:-1]), cl_lines[-1], story)
+        target_path = os.path.join(docs_dir, _slug(target) + ".md")
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(doc_text)
+        for m in members:
+            if os.path.abspath(feats[m]) != os.path.abspath(target_path) \
+                    and os.path.exists(feats[m]):
+                os.remove(feats[m])
+        results.append(
+            f"- merged {', '.join(merged_from)} -> {target} "
+            f"({len(all_facts)} facts)"
+        )
+    return results

@@ -12,6 +12,9 @@ Slash commands
   /extract <file>        Alias for /requirements.
   /features              List the feature docs discovered under knowledge/.
   /show <feature>        Print a feature doc.
+  /ask <question>        Answer from the docs: when a change was made, what was
+                         used before it, who said it, etc.
+  /merge "A" "B" [...]   Combine feature docs into the first (keeps all facts).
   /model                 Show which Ollama model is in use.
   /skills                List all commands.
   /help                  Show this help.
@@ -25,13 +28,17 @@ import re
 import sys
 
 from . import __version__
-from .extract import (canonicalize_feature_names, extract_statements,
+from .extract import (answer_question, canonicalize_statements,
+                      extract_statements, propose_doc_merges,
                       reconcile_statement, synthesize_user_story)
-from .knowledge_docs import DOCS_DIR, discover_features, merge_statements
+from .knowledge_docs import (DOCS_DIR, apply_merges, describe_features,
+                             discover_features, merge_statements, suggest_merges)
 from .ollama_client import DEFAULT_MODEL, OllamaError
 
 _REQ_RE = re.compile(r"^/(?:requirements|extract)\s+(.+)$", re.IGNORECASE)
 _SHOW_RE = re.compile(r"^/show\s+(.+)$", re.IGNORECASE)
+_MERGE_RE = re.compile(r"^/merge\s+(.+)$", re.IGNORECASE)
+_ASK_RE = re.compile(r"^/ask\s+(.+)$", re.IGNORECASE)
 
 # Single source of truth for the slash commands: (command, args, description).
 # Drives /skills, /help, and tab-completion.
@@ -42,6 +49,10 @@ SKILLS = [
     ("/extract", "<file>", "Alias for /requirements."),
     ("/features", "", "List the feature docs discovered under the knowledge dir."),
     ("/show", "<feature>", "Print one feature doc (partial name match)."),
+    ("/ask", "<question>", "Answer a question from the knowledge docs -- when a "
+                          "change was made, what was used before, who said it."),
+    ("/merge", '"A" "B" [...]', "Combine two or more feature docs into the first "
+                               "(keeps every fact + citation)."),
     ("/model", "", "Show which Ollama model is in use."),
     ("/skills", "", "List these commands."),
     ("/help", "", "Show usage help."),
@@ -72,6 +83,7 @@ def run_phase1(path: str) -> None:
         return
 
     known = list(discover_features().keys())
+    merges = []
     try:
         statements = extract_statements(text, known)
         if not statements:
@@ -83,13 +95,22 @@ def run_phase1(path: str) -> None:
         summary = merge_statements(statements, source_name,
                                    reconcile=reconcile_statement,
                                    story_fn=synthesize_user_story,
-                                   canon_fn=canonicalize_feature_names)
+                                   canon_fn=canonicalize_statements)
+
+        print("Checking for fragmented feature areas...")
+        # The 7B is not reliable enough to auto-merge docs (on a large
+        # knowledge base it will occasionally merge unrelated ones), so this
+        # only *suggests*. Apply what looks right with:  /merge <a> <b> ...
+        merges = suggest_merges(propose_doc_merges(describe_features()))
     except OllamaError as exc:
         print(f"\n{exc}")
         return
 
     print("\nDone. Updated feature docs:")
     print("\n".join(summary))
+    if merges:
+        print("\nPossible fragmentation — review and run /merge if right:")
+        print("\n".join(merges))
     print(
         f"\n{len(summary)} feature doc(s) touched. Changes were applied in place; "
         f"review anything tagged [NEEDS REVIEW] / [UNVERIFIED CITATION] in {DOCS_DIR}/."
@@ -114,6 +135,43 @@ def _show_feature(query: str) -> None:
                 print(f.read())
             return
     print(f'No feature doc matching "{query}".')
+
+
+_QUOTED_RE = re.compile(r'"([^"]+)"|(\S+)')
+
+
+def _merge_docs(argstr: str) -> None:
+    """/merge "A" "B" ["C" ...] -- fold B, C, … into A."""
+    raw = [a or b for a, b in _QUOTED_RE.findall(argstr)]
+    feats = discover_features()
+    lower = {n.lower(): n for n in feats}
+    names, missing = [], []
+    for tok in raw:
+        hit = lower.get(tok.lower()) or next(
+            (n for n in feats if tok.lower() in n.lower()), None)
+        (names if hit else missing).append(hit or tok)
+    names = list(dict.fromkeys(names))
+    if missing:
+        print("No feature doc for: " + ", ".join(f'"{m}"' for m in missing))
+    if len(names) < 2:
+        print('Usage: /merge "First Doc" "Second Doc" ["Third" ...]')
+        return
+    results = apply_merges([names], story_fn=synthesize_user_story, explicit=True)
+    print("\n".join(results) if results else "Nothing merged.")
+
+
+def _ask(question: str) -> None:
+    texts = {}
+    for name, path in discover_features().items():
+        try:
+            with open(path, encoding="utf-8") as f:
+                texts[name] = f.read()
+        except OSError:
+            continue
+    try:
+        print(answer_question(question, texts))
+    except OllamaError as exc:
+        print(exc)
 
 
 def _handle(line: str) -> bool:
@@ -143,6 +201,14 @@ def _handle(line: str) -> bool:
     m = _SHOW_RE.match(line)
     if m:
         _show_feature(m.group(1))
+        return True
+    m = _MERGE_RE.match(line)
+    if m:
+        _merge_docs(m.group(1))
+        return True
+    m = _ASK_RE.match(line)
+    if m:
+        _ask(m.group(1))
         return True
 
     if line.startswith("/"):
