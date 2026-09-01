@@ -453,6 +453,8 @@ def extract_statements(transcript_text: str, known_features, model=None,
                 model=model, show_progress=False))
             if not cov_raw.strip().upper().startswith("NO STATEMENTS"):
                 cov_blocks = parse_statement_blocks(cov_raw)
+                for b in cov_blocks:
+                    b["from_coverage"] = True  # best-effort: drop if it can't ground
                 found.extend(cov_blocks)
                 for b in cov_blocks:
                     if b["feature"] not in seen_features:
@@ -489,6 +491,9 @@ def extract_statements(transcript_text: str, known_features, model=None,
                     piece["timestamp"] = recovered
             if piece.get("kind") == "question" and not verified:
                 continue  # an ungrounded "open question" is just noise
+            if piece.get("from_coverage") and not verified:
+                continue  # the coverage pass is best-effort -- an addition it
+                          # can't ground verbatim is dropped, not flagged
             piece.setdefault("kind", "fact")
             key = _normalise(piece["quote"])
             if key in seen_quotes:

@@ -4,7 +4,11 @@
     python3 scripts/score.py <knowledge_dir> <transcript.txt> [<transcript.txt> ...]
 
 Checks (exit code is non-zero if any HARD check fails):
-  HARD  every EF / OPEN QUESTION quote is verbatim (normalised) in some transcript
+  HARD  every quote asserted as fact (Established Facts, OPEN QUESTION, and a
+        NEEDS REVIEW block's "New:" line) is verbatim (normalised) in some
+        transcript. Quotes inside an [UNVERIFIED CITATION] block are exempt --
+        that block exists precisely to flag a quote that did NOT verify, so
+        the pipeline is working, not failing.
   HARD  no fabricated HH:MM:SS timestamp on a fact sourced from a .txt
   soft  counts: docs, facts, superseded, [NEEDS REVIEW], [UNVERIFIED CITATION],
         [OPEN QUESTION], and any EF summary that looks like a bare fragment
@@ -39,6 +43,7 @@ def main(argv):
         return 2
 
     n_fact = n_sup = n_review = n_unver = n_open = 0
+    n_exempt_q = 0  # quotes inside [UNVERIFIED CITATION] blocks -- not hard-checked
     ungrounded, fake_ts, fragments = [], [], []
     for d in docs:
         body = open(d, encoding="utf-8").read()
@@ -48,9 +53,21 @@ def main(argv):
         n_review += body.count("[NEEDS REVIEW]")
         n_unver += body.count("[UNVERIFIED CITATION]")
         n_open += body.count("[OPEN QUESTION]")
-        for q in _QUOTE_RE.findall(body):
-            if norm(q) not in tx:
-                ungrounded.append((name, q))
+        # Hard-check quotes, but skip any inside an [UNVERIFIED CITATION]
+        # block -- that block is the pipeline flagging a quote it could NOT
+        # ground, which is correct behaviour, not a failure.
+        in_unverified = False
+        for line in body.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("## "):
+                in_unverified = False
+            elif stripped.startswith("- ") and line == stripped:  # top-level bullet
+                in_unverified = "[UNVERIFIED CITATION]" in line
+            for q in _QUOTE_RE.findall(line):
+                if in_unverified:
+                    n_exempt_q += 1
+                elif norm(q) not in tx:
+                    ungrounded.append((name, q))
         for m in re.finditer(r"source: ([a-zA-Z0-9_\-]+),[^)]*\)", body):
             src = m.group(1)
             line = body[body.rfind("\n", 0, m.start()) + 1: m.end()]
@@ -64,8 +81,9 @@ def main(argv):
                 if len(w) < 4:
                     fragments.append((name, summ))
 
-    total_q = n_fact  # facts each carry a quote; questions carry one too
-    total_q = len(sum([_QUOTE_RE.findall(open(d, encoding="utf-8").read()) for d in docs], []))
+    all_q = len(sum([_QUOTE_RE.findall(open(d, encoding="utf-8").read())
+                     for d in docs], []))
+    total_q = all_q - n_exempt_q          # quotes subject to the hard check
     grounded = total_q - len(ungrounded)
 
     print(f"docs                : {len(docs)}")
