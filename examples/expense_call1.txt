@@ -1,0 +1,49 @@
+Aisha Kapoor: Morning everyone, thanks for joining. Let's scope the expense reimbursement app. Ravi, you're leading requirements from our side?
+Ravi Menon: That's right. I've got Lena from finance on as well.
+Lena Ortiz: Hi all.
+Priya Raman: Great. I'm Priya, solution architect, and Kofi is here from engineering. Let's start with how an expense gets into the system.
+Ravi Menon: An employee submits an expense with a photo of the receipt attached. No receipt, no submission.
+Priya Raman: So a receipt image is mandatory on every submission. Got it. What happens after they submit?
+Ravi Menon: It goes to their line manager for approval.
+Lena Ortiz: With one shortcut. Expenses under twenty-five dollars are auto-approved without a manager looking at them.
+Priya Raman: Understood. Manager approval required, except auto-approve below twenty-five dollars. How are expenses categorised?
+Ravi Menon: There's a fixed list of categories: travel, meals, office supplies, and software. Employees pick one when submitting.
+Priya Raman: A fixed category list, four options. Can employees add their own category?
+Ravi Menon: No, the list is fixed. Finance owns it.
+Kofi Mensah: Noted. How does the money actually reach the employee?
+Lena Ortiz: Approved expenses are paid out through payroll, in the next pay cycle.
+Priya Raman: So reimbursement rides on payroll, next cycle. Any spending limits we should know about?
+Lena Ortiz: Each employee can be reimbursed up to five hundred dollars a month without any extra sign-off. Above that, it needs a finance director's approval too.
+Priya Raman: Five hundred a month is the threshold for a second approval. Noted. What about notifications?
+Ravi Menon: The employee gets an email when their expense is approved, and another email if it's rejected.
+Priya Raman: Email to the employee on approval and on rejection. Anything on record keeping?
+Lena Ortiz: Every submission, approved or not, has to be retained for seven years for audit purposes.
+Priya Raman: Seven year retention on all submissions. And the roles in the system?
+Ravi Menon: Three roles. Employee, manager, and finance admin.
+Priya Raman: Employee, manager, finance admin. Kofi, anything you need clarified before we move on?
+Kofi Mensah: One thing. When a manager rejects an expense, do they have to give a reason?
+Ravi Menon: Yes, a rejection always needs a written reason. The employee should never be left guessing.
+Priya Raman: Good, rejection reason is mandatory. A few more small things while we have time. What fields does an employee fill in on a submission?
+Ravi Menon: Amount, date of the expense, category, a short description, and the receipt image. That's it.
+Priya Raman: Amount, date, category, description, receipt. Can they edit a submission after sending it?
+Lena Ortiz: Only while it's still pending. Once a manager has approved or rejected it, it's locked.
+Priya Raman: So edits are allowed on pending items only, locked after a decision. What about deleting a pending expense?
+Ravi Menon: They can delete their own expense as long as it's still pending.
+Priya Raman: Noted. Do we need to handle foreign currencies?
+Lena Ortiz: Everything is in US dollars for launch. Multi-currency can come later.
+Priya Raman: US dollars only at launch. Is there a time limit on how fast a manager must act?
+Ravi Menon: A manager should approve or reject within five business days. After that it escalates to their manager.
+Priya Raman: Five business day approval SLA, then escalation. That's helpful.
+Aisha Kapoor: This is going well. How's the new office coming along, Priya?
+Priya Raman: Slowly. The furniture is still in boxes. Anyway, let's keep going.
+Kofi Mensah: One more from me. Can an employee submit an expense on someone else's behalf?
+Ravi Menon: No. Only the person who incurred the expense can submit it.
+Priya Raman: Understood, no submitting on behalf of others. Anything else on your list?
+Ravi Menon: Actually I think that covers our list for today.
+Lena Ortiz: Agreed. We'll have more once people start using the mockups.
+Priya Raman: Perfect. Kofi will send notes by end of day and we'll pick up next week.
+Kofi Mensah: Will do.
+Aisha Kapoor: Thanks everyone. Same time next week?
+Ravi Menon: Works for us.
+Lena Ortiz: See you then.
+Priya Raman: Thanks all, bye.

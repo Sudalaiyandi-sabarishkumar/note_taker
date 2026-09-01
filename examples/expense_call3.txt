@@ -1,0 +1,38 @@
+Aisha Kapoor: Call three. How was quarter end, Lena?
+Lena Ortiz: Survived it. Back to normal bandwidth now.
+Priya Raman: Good to hear. We have a few more changes and a couple of new items. Ravi?
+Ravi Menon: Start with the monthly limit. Raise the per-employee monthly reimbursement limit from five hundred dollars to one thousand dollars before a finance director's second approval is needed.
+Priya Raman: So the second-approval threshold moves from five hundred a month to one thousand a month. Understood.
+Lena Ortiz: Cost of living, mostly. Five hundred hasn't moved in years and it's triggering second approvals constantly.
+Priya Raman: Noted. Next?
+Lena Ortiz: The category list. It should no longer be fixed. A finance admin can add, rename, or remove categories themselves without asking engineering.
+Priya Raman: That's a change. The category list was fixed and finance-owned in spec; now it's editable in-app by a finance admin.
+Ravi Menon: Right. We add categories every few months and waiting on a release is painful.
+Priya Raman: Clear. What about the seven year retention rule, still standing?
+Lena Ortiz: Seven year retention stays, no change there.
+Priya Raman: Confirmed, seven year retention unchanged. Any new requirements?
+Ravi Menon: Rejections must, in every single case, carry a written explanation from the approver.
+Priya Raman: We captured a rejection reason as mandatory in call one. This sounds like the same rule stated again.
+Ravi Menon: Same rule, we just want it airtight. It kept getting skipped in the old system.
+Priya Raman: Understood, no change, just emphasis. Anything genuinely new?
+Ravi Menon: Yes. When a manager is on leave, they can delegate approval authority to another manager for a set date range.
+Priya Raman: Approval delegation with a date range while a manager is away. That's new.
+Kofi Mensah: Does the delegate see the original manager's whole queue, or just new items during the window?
+Ravi Menon: Just items that land during the window. We haven't decided what happens to items already sitting in the queue when they leave.
+Priya Raman: I'll note the queue backlog handling as an open question. A few smaller items?
+Ravi Menon: Yes. Auto-approved expenses should still show up in the manager's history, just marked as auto-approved, so there's a full trail.
+Priya Raman: Understood, auto-approved items appear in the manager's history flagged as auto-approved.
+Lena Ortiz: On the CSV bulk upload, each row still needs a receipt. If a row has no receipt reference, that row is rejected on import.
+Priya Raman: So bulk upload enforces the same receipt-required rule per row. Noted.
+Ravi Menon: And for mileage expenses specifically, employees enter the number of miles and the system calculates the amount at the current IRS rate.
+Priya Raman: Mileage is entered as distance, and the amount is computed from the current IRS mileage rate. Got it.
+Kofi Mensah: Where does the IRS rate come from, do we hardcode it?
+Lena Ortiz: Finance updates it once a year. It should be a setting a finance admin can change, not a code change.
+Priya Raman: A finance-admin-editable mileage rate setting. Noted. Last thing?
+Ravi Menon: More of a principle. The whole submission and approval flow should feel effortless. People hate expense tools.
+Priya Raman: Understood, and I hear you, though effortless isn't something we can build to a spec. We'll treat it as a guiding principle and bring concrete usability targets later.
+Aisha Kapoor: That's everything from our side.
+Priya Raman: Great, big session. Updated notes tomorrow. Same time next week?
+Lena Ortiz: Works for me.
+Ravi Menon: Us too. Thanks all.
+Priya Raman: Thanks everyone, bye.

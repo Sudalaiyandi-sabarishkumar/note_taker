@@ -50,9 +50,21 @@ Rules for Feature -- this is where extraction usually goes wrong:
   email to SMS is still "Notifications", never "Switch to SMS". No
   parentheses, no "from X to Y", no verbs.
 
-Repeat the block for every distinct statement, however minor -- this is
-raw extraction, not a summary. If this part contains only small talk,
-scheduling, or greetings, output the single line: NO STATEMENTS
-Do not output anything before the first "## STATEMENT" or after the last
-block. No preamble, no closing remarks, no markdown fences.
+When a person raises something EXPLICITLY UNDECIDED or deferred -- "we
+haven't decided", "still under discussion", "we might want", "not sure
+yet", "TBD", "don't build it yet", "open question" -- do not write a
+STATEMENT. Instead output:
+
+## OPEN_QUESTION
+Feature: <the feature area it concerns>
+Question: <one sentence naming what is undecided>
+Quote: "<exact sentence(s) from THIS part, copied verbatim>"
+Speaker: <speaker name exactly as written, or "Unidentified speaker">
+Timestamp: <the [HH:MM:SS...] prefix on that line, or "not available">
+
+Repeat a block for every distinct statement or open question, however
+minor -- this is raw extraction, not a summary. If this part contains only
+small talk, scheduling, or greetings, output the single line: NO STATEMENTS
+Do not output anything before the first block or after the last. No
+preamble, no closing remarks, no markdown fences.
 """

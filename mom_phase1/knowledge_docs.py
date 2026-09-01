@@ -42,6 +42,22 @@ from datetime import date
 
 DOCS_DIR = os.environ.get("MOM_DOCS_DIR", "knowledge")
 
+# Phrases that mean "I am re-confirming, not changing". If a statement carries
+# one of these and introduces no different number, a CHANGE verdict from the
+# reconciler is overridden to DUPLICATE (nothing gets superseded).
+_NOCHANGE_RE = re.compile(
+    r"\b(no change|not chang\w*|unchanged|stays? (?:as is|the same)|"
+    r"still (?:require\w*|stand\w*|appl\w*|in place|the same|correct|true)|"
+    r"same (?:rule|as before|thing)|as (?:before|is)|remains? (?:the same|unchanged)|"
+    r"just (?:to )?(?:re)?confirm\w*|re-?confirm\w*|no change there)\b",
+    re.IGNORECASE,
+)
+_NUM_TOKEN_RE = re.compile(r"\d[\d,]*")
+
+
+def _numbers(text):
+    return {t.replace(",", "") for t in _NUM_TOKEN_RE.findall(text or "")}
+
 _STOPWORDS = {"a", "an", "the", "for", "in", "on", "of", "to", "and", "or",
               "from", "as", "via", "with", "by", "at",
               "app", "flow", "feature", "screen", "page", "system", "module",
@@ -327,11 +343,23 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         all_facts = list(facts)
         next_id = max([f["id"] for f in all_facts], default=0) + 1
         new_questions, extra_log = [], []
-        n_new = n_dup = n_change = n_review = n_unverified = 0
+        n_new = n_dup = n_change = n_review = n_unverified = n_open = 0
 
+        prior_q = sections["open_questions"]
         for i, s in enumerate(group, start=1):
             attribution = f"{s['speaker']}, {s['timestamp']} (source: {source_name}, {today})"
             q_id = f"Q-{today}-{_slug(feature)}-{i}"
+
+            if s.get("kind") == "question":
+                block = (
+                    f'- **{q_id}** [OPEN QUESTION]: {s["summary"].rstrip(".")}. '
+                    f'— raised by {s["speaker"]}, {source_name} ({today})\n'
+                    f'  - *"{s["quote"]}"*'
+                )
+                if s["quote"] not in prior_q:  # skip a repeat of the same quote
+                    new_questions.append(block)
+                    n_open += 1
+                continue
 
             if not s["verified"]:
                 new_questions.append(
@@ -376,10 +404,21 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 n_dup += 1
 
             elif verdict == "CHANGE" and target is not None:
+                new_txt = s["summary"] + " " + s["quote"]
+                tgt_txt = target["summary"] + " " + target["quote"]
+                # A "no change / same rule / just confirming" statement that
+                # brings no different number is a restatement, not a change --
+                # override the reconciler.
+                if (_NOCHANGE_RE.search(new_txt)
+                        and not (_numbers(s["quote"]) - _numbers(target["quote"]))):
+                    extra_log.append(
+                        f'- {today}: {source_name} restated EF-{target_id} for '
+                        f'"{feature}" — no change (statement re-confirms it).'
+                    )
+                    n_dup += 1
+                    continue
                 same_call = f"source: {source_name}," in target["attribution"]
-                connected = bool(
-                    _mwords(s["summary"] + " " + s["quote"])
-                    & _mwords(target["summary"] + " " + target["quote"]))
+                connected = bool(_mwords(new_txt) & _mwords(tgt_txt))
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
@@ -418,6 +457,15 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                     n_change += 1
                 next_id += 1
 
+            elif _NOCHANGE_RE.search(s["summary"] + " " + s["quote"]):
+                # "no change there / still required / just confirming" -- a
+                # re-confirmation, whatever verdict the reconciler returned.
+                extra_log.append(
+                    f'- {today}: {source_name} re-confirmed an existing fact for '
+                    f'"{feature}" — no change.'
+                )
+                n_dup += 1
+
             else:  # UNCLEAR, no reconcile callback, or a stale target id
                 existing_summary = "; ".join(
                     f'EF-{f["id"]}: {f["summary"]}' for f in active
@@ -434,7 +482,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         run_line = (
             f"- {today}: processed {source_name} — {n_new} new, {n_change} "
             f"changed, {n_dup} restated, {n_review} to review, "
-            f"{n_unverified} unverified"
+            f"{n_unverified} unverified, {n_open} open question(s)"
         )
         changelog_entry = "\n".join([run_line, *extra_log])
 
@@ -451,10 +499,13 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         with open(path, "w", encoding="utf-8") as f:
             f.write(doc_text)
 
-        summary.append(
-            f"- {feature}: {n_new} new, {n_change} changed, {n_dup} restated, "
-            f"{n_review} to review, {n_unverified} unverified  ->  {path}"
-        )
+        bits = [f"{n_new} new"]
+        if n_change: bits.append(f"{n_change} changed")
+        if n_dup: bits.append(f"{n_dup} restated")
+        if n_review: bits.append(f"{n_review} to review")
+        if n_unverified: bits.append(f"{n_unverified} unverified")
+        if n_open: bits.append(f"{n_open} open question(s)")
+        summary.append(f"- {feature}: " + ", ".join(bits) + f"  ->  {path}")
     return summary
 
 

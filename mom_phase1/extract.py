@@ -90,10 +90,23 @@ work on mobile browsers, but a native app is out of scope" becomes two
 statements, one quoting "must work on mobile browsers" and one quoting "a
 native app is out of scope".
 
+Separately, whenever someone raises something that is explicitly UNDECIDED,
+deferred, or still being discussed -- phrases like "we haven't decided",
+"still under discussion", "we might want", "not sure yet", "TBD", "don't
+build it yet", "keep it in mind", "open question" -- output an open-question
+block instead of a STATEMENT:
+
+## OPEN_QUESTION
+Feature: <the feature area it concerns>
+Question: <one sentence naming what is undecided>
+Quote: "<exact sentence(s) from THIS part, copied verbatim>"
+Speaker: <name exactly as written, or "Unidentified speaker">
+Timestamp: <the [HH:MM:SS...] prefix on that line, or "not available">
+
 Only extract requirements/decisions/constraints/facts about the product.
 Skip reactions, opinions, workload remarks, scheduling, and small talk.
-Repeat for every distinct statement, however minor. If this part has none,
-output the single line: NO STATEMENTS
+Repeat for every distinct statement or open question, however minor. If this
+part has neither, output the single line: NO STATEMENTS
 Output nothing before the first block or after the last."""
 
 
@@ -162,23 +175,36 @@ def _snap_quote(model_quote: str, spans, norm_spans, norm_transcript: str):
     return model_quote, False, best_score
 
 
-def parse_statement_blocks(text: str):
-    statements = []
-    for block in text.split("## STATEMENT")[1:]:
+def _parse_blocks(text, marker, labels, required):
+    out = []
+    for block in text.split(marker)[1:]:
+        block = block.split("## ")[0]  # stop at the next block of any kind
         fields = {}
         for line in block.splitlines():
             line = line.strip()
-            for key, label in _LABELS.items():
+            for key, label in labels.items():
                 if line.startswith(label) and key not in fields:
                     value = line[len(label):].strip()
-                    if key == "quote":
-                        value = value.strip().strip('"').strip()
+                    if key in ("quote",):
+                        value = value.strip('"').strip()
                     elif key == "feature":
                         value = _decamel(value.strip('"').strip())
                     fields[key] = value
-        if all(k in fields and fields[k] for k in _FIELDS):
-            statements.append(fields)
-    return statements
+        if all(fields.get(k) for k in required):
+            out.append(fields)
+    return out
+
+
+def parse_statement_blocks(text: str):
+    stmts = _parse_blocks(text, "## STATEMENT", _LABELS, _FIELDS)
+    for s in stmts:
+        s["kind"] = "fact"
+    q_labels = {"feature": "Feature:", "summary": "Question:",
+                "quote": "Quote:", "speaker": "Speaker:", "timestamp": "Timestamp:"}
+    for q in _parse_blocks(text, "## OPEN_QUESTION", q_labels, _FIELDS):
+        q["kind"] = "question"
+        stmts.append(q)
+    return stmts
 
 
 # BUG 5 -- the model still extracts personal reactions / meta-comments about
@@ -222,6 +248,25 @@ def _is_reply_echo(quote: str) -> bool:
     return bool(_REPLY_ECHO_RE.match(q)) and len(q.split()) <= 11
 
 
+# A wish for a "feel" with no measurable object -- not a requirement.
+_ASPIRATION_RE = re.compile(
+    r"\b(should (?:feel|just feel)|feels? (?:really |truly )?"
+    r"(?:effortless|seamless|premium|delightful|magical|intuitive|"
+    r"modern|slick|polished|snappy|smooth|clean|elegant|frictionless)|"
+    r"really love|love (?:using )?(?:it|the (?:app|product|tool))|"
+    r"best[- ]in[- ]class|world[- ]class|not (?:just )?tolerate|"
+    r"hate expense tools|people hate)\b",
+    re.IGNORECASE,
+)
+_MEASURABLE_RE = re.compile(
+    r"\d|\b(second|minute|hour|day|week|month|percent|%|kb|mb|gb|"
+    r"page|click|step|field|character)s?\b", re.IGNORECASE)
+
+
+def _is_aspiration(quote: str) -> bool:
+    return bool(_ASPIRATION_RE.search(quote or "")) and not _MEASURABLE_RE.search(quote or "")
+
+
 def _unbundle(statement: dict, norm_transcript: str):
     """If the Quote already verifies as one contiguous span, return the
     statement unchanged. Otherwise, if it is 2+ sentences and each on its own
@@ -235,7 +280,8 @@ def _unbundle(statement: dict, norm_transcript: str):
     parts = [p.strip() for p in _SENT_END_RE.split(q) if p.strip()]
     if len(parts) < 2:
         return [statement]
-    verified_parts = [p for p in parts if _normalise(p) in norm_transcript]
+    verified_parts = [p for p in parts
+                      if _normalise(p) in norm_transcript and _looks_like_requirement(p)]
     if len(verified_parts) < 2:
         return [statement]  # not a clean multi-quote bundle; let snap try
     out = []
@@ -245,6 +291,21 @@ def _unbundle(statement: dict, norm_transcript: str):
         piece["summary"] = p.rstrip(".!?") + "."
         out.append(piece)
     return out
+
+
+_HAS_VERBISH_RE = re.compile(
+    r"\b(is|are|was|were|be|will|shall|should|must|can|may|need|have|has|"
+    r"want|allow|require|send|add|show|keep|make|use|get|give|set|pay|"
+    r"support|include|enter|submit|approve|reject|delegate|calculat|"
+    r"appear|retain|store|export|display|goes?|go|do|does)\b", re.IGNORECASE)
+
+
+def _looks_like_requirement(text: str) -> bool:
+    """A split-off fragment is only worth keeping as its own statement if it
+    reads like one -- has some substance and a verb-ish word. Drops debris
+    like 'With one shortcut.' that happens to be a verbatim substring."""
+    words = re.findall(r"[a-z0-9']+", text.lower())
+    return len(words) >= 5 and bool(_HAS_VERBISH_RE.search(text))
 
 
 def extract_statements(transcript_text: str, known_features, model=None,
@@ -283,13 +344,14 @@ def extract_statements(transcript_text: str, known_features, model=None,
     spans = _candidate_spans(transcript_text)
     norm_spans = [_normalise(sp) for sp in spans]
 
-    kept = []
+    kept, seen_quotes = [], set()
     for s in found:
         if _is_banter(s["quote"]) or _is_reply_echo(s["quote"]):
             continue  # reaction, meta-comment, or bare acknowledgement
-        # A model that jammed several transcript sentences into one Quote is
-        # unbundled here so each real sentence becomes its own statement.
-        for piece in _unbundle(s, norm_transcript):
+        # An open question is one item -- verify its quote but never unbundle
+        # or reconcile it.
+        pieces = [s] if s.get("kind") == "question" else _unbundle(s, norm_transcript)
+        for piece in pieces:
             snapped, verified, score = _snap_quote(
                 piece["quote"], spans, norm_spans, norm_transcript)
             if snapped != piece["quote"]:
@@ -300,6 +362,20 @@ def extract_statements(transcript_text: str, known_features, model=None,
             ts = piece.get("timestamp", "").strip()
             if ts and ts.lower() != "not available" and ts not in transcript_text:
                 piece["timestamp"] = "not available"
+            if piece.get("kind") == "question" and not verified:
+                continue  # an ungrounded "open question" is just noise
+            piece.setdefault("kind", "fact")
+            key = _normalise(piece["quote"])
+            if key in seen_quotes:
+                continue  # same quote from an overlapping chunk
+            seen_quotes.add(key)
+            # A vague aspiration ("should feel effortless") is not a testable
+            # fact -- reclassify it as an open question so it lands in the
+            # right section instead of Established Facts.
+            if piece["kind"] == "fact" and _is_aspiration(piece["quote"]):
+                piece["kind"] = "question"
+                piece["summary"] = ("Turn into a concrete, testable requirement: "
+                                    + piece["summary"].rstrip("."))
             kept.append(piece)
     return kept
 
@@ -763,17 +839,15 @@ def synthesize_user_story(feature, active_facts, model=None):
     if not active_facts:
         return "No confirmed requirements yet."
 
-    def _cap_phrase(text):
-        toks = text.strip().rstrip(".").split()
-        if toks and toks[0].lower() in _LEADING_VERBS:
-            toks = toks[1:]
-        if not toks:
-            return text.strip().rstrip(".")
-        return toks[0][0].lower() + " ".join(toks)[1:]
-
-    fallback = ("As a user, I want "
-                + " and ".join(_cap_phrase(f["summary"]) for f in active_facts[-3:])
-                + ".")
+    # Mechanical fallback -- used only if the model call fails or its output
+    # can't be trusted. Not forced into "As a ... I want ..." shape (some
+    # fact summaries are declarative and don't fit it); just the newest
+    # requirement stated plainly, with a pointer to the rest.
+    newest = active_facts[-1]["summary"].strip().rstrip(".") + "."
+    extra = len(active_facts) - 1
+    fallback = newest + (
+        f" (Plus {extra} more requirement{'s' if extra > 1 else ''} below.)"
+        if extra else "")
 
     facts_block = "\n".join(f'- {f["summary"]} (exact words: "{f["quote"]}")'
                             for f in active_facts)
@@ -784,11 +858,12 @@ Confirmed facts, all currently true:
 
 Write ONE user story: "As a <role>, I want <capability>, so that <benefit>."
 - <role>: whoever the requirement serves, inferred from the facts.
-- <capability>: what the facts say the product does. Combine multiple facts
-  with "and".
+- <capability>: what the facts say the product does, in your own words.
+  Combine multiple facts with "and".
 - ", so that <benefit>": include ONLY if a benefit is stated in the facts;
-  otherwise end the sentence after <capability>.
-Use only the facts above -- no invented detail. Output only the story."""
+  otherwise end after <capability>.
+It must be one grammatical sentence starting "As a". Use only the facts --
+no invented detail. Output only the story."""
     try:
         raw = chat(
             [{"role": "system", "content": _STORY_SYSTEM},
@@ -801,19 +876,27 @@ Use only the facts above -- no invented detail. Output only the story."""
     story = strip_think(raw).strip().strip('"').strip()
     for lead in ("Sure,", "Here is", "Here's", "User story:", "Story:"):
         if story.lower().startswith(lead.lower()):
-            story = story.split(":", 1)[-1].strip() if ":" in story[:40] else fallback
+            story = story.split(":", 1)[-1].strip()
             break
-    if not story or "as a" not in story.lower()[:12]:
+    if not story or not story.lower().lstrip("*_ ").startswith("as a"):
         return fallback
 
-    # Structural guard: the story may not bring in content words that appear
-    # in none of the facts (this is what caught an invented "email, SMS,
-    # WhatsApp" leaking in from a prompt example).
+    # Constrain the <role>: it must be a word that actually appears in this
+    # doc's facts (stops a stale "learner" leaking from another domain).
+    fact_text = " ".join(f["summary"] + " " + f["quote"] for f in active_facts).lower()
+    m = re.match(r"\s*as an?\s+([a-z][a-z ]{1,20}?)[,\s]", story, re.IGNORECASE)
+    if m:
+        role = m.group(1).strip().lower()
+        head = role.split()[-1].rstrip("s")
+        if head not in ("user",) and head and head not in fact_text:
+            story = re.sub(r"^\s*as an?\s+[a-z][a-z ]{1,20}?([,\s])",
+                           r"As a user\1", story, count=1, flags=re.IGNORECASE)
+
+    # Structural guard: reject a story that pulls in content words present in
+    # none of the facts (caught an invented "email, SMS, WhatsApp" once).
     grounded = set()
     for f in active_facts:
         grounded |= _content_words(f["summary"]) | _content_words(f["quote"])
     grounded |= _content_words(feature)
     novel = _content_words(story) - grounded
-    if len(novel) >= 3:  # a little phrasing slack; 3+ novel words = invented content
-        return fallback
-    return story
+    return fallback if len(novel) >= 4 else story
