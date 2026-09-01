@@ -495,7 +495,6 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
 
             elif verdict == "CHANGE" and target is not None:
                 new_txt = s["summary"] + " " + s["quote"]
-                tgt_txt = target["summary"] + " " + target["quote"]
                 # A "no change / same rule / just confirming" statement that
                 # brings no different number is a restatement, not a change --
                 # override the reconciler.
@@ -508,7 +507,16 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                     n_dup += 1
                     continue
                 same_call = f"source: {source_name}," in target["attribution"]
-                connected = bool(_mwords(new_txt) & _mwords(tgt_txt))
+                # The reconciler names ONE target, but a 7B often aims a change
+                # at the wrong fact when several share generic words ("high",
+                # "priority"). Re-aim at the active fact whose actual wording
+                # overlaps this statement most.
+                aim_id = _best_supersede_target(new_txt, active)
+                if aim_id is None and (_mwords(new_txt)
+                                       & _mwords(target["summary"] + " " + target["quote"])):
+                    # No confident re-aim, but the reconciler's own target at
+                    # least shares wording -- trust it rather than flag.
+                    aim_id = target_id
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
@@ -520,14 +528,14 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                         f'{source_name} (complementary to EF-{target_id}, same call).'
                     )
                     n_new += 1
-                elif not connected:
-                    # The "change" shares no word with the fact it supposedly
-                    # overrides -- almost certainly a misfiled statement. Keep
-                    # both, supersede nothing, flag for review.
+                elif aim_id is None:
+                    # Shares no distinctive wording with ANY active fact --
+                    # almost certainly misfiled. Keep both, supersede nothing.
                     new_questions.append(
                         f'- **{q_id}** [NEEDS REVIEW]: {source_name} statement for '
                         f'"{feature}" was flagged as changing EF-{target_id}, but it '
-                        f'shares no wording with it and may be misfiled.{reason_txt}\n'
+                        f'shares no wording with any recorded fact and may be '
+                        f'misfiled.{reason_txt}\n'
                         f'  - New: *"{s["quote"]}"* — {attribution}\n'
                         f'  - EF-{target_id}: *"{target["quote"]}"* — {target["attribution"]}'
                     )
@@ -540,11 +548,15 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 else:
                     # Keep the old fact, mark it superseded, add the new one --
                     # the Established Facts section stays complete.
-                    target["superseded_by"] = next_id
+                    aim = next(f for f in active if f["id"] == aim_id)
+                    aim["superseded_by"] = next_id
+                    redirect = ("" if aim_id == target_id else
+                                f' (reconciler pointed at EF-{target_id}; '
+                                f're-aimed at EF-{aim_id} by wording)')
                     extra_log.append(
-                        f'- {today}: EF-{target_id} for "{feature}" superseded by '
-                        f'EF-{next_id} (from {source_name}).{reason_txt}\n'
-                        f'  - was: *"{target["quote"]}"* — {target["attribution"]}\n'
+                        f'- {today}: EF-{aim_id} for "{feature}" superseded by '
+                        f'EF-{next_id} (from {source_name}).{redirect}{reason_txt}\n'
+                        f'  - was: *"{aim["quote"]}"* — {aim["attribution"]}\n'
                         f'  - now: *"{s["quote"]}"* — {attribution}'
                     )
                     n_change += 1
@@ -633,6 +645,35 @@ def _mwords(text):
     return {w[:-1] if len(w) > 4 and w.endswith("s") else w
             for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
             if w not in _MERGE_STOP}
+
+
+def _best_supersede_target(new_txt, active_facts):
+    """The active fact whose wording overlaps ``new_txt`` most, ignoring words
+    that appear in more than half of the facts (they carry no signal about
+    WHICH fact is being changed).
+
+    Returns that fact's id only when the match is *confident* -- overlap of 2+
+    distinctive words, or a single clear winner. Otherwise None, so the caller
+    can fall back to the reconciler's own target or flag for review."""
+    if not active_facts:
+        return None
+    from collections import Counter
+    fw, df = {}, Counter()
+    for f in active_facts:
+        w = _mwords(f["summary"] + " " + f["quote"])
+        fw[f["id"]] = w
+        df.update(w)
+    ambient = ({k for k, c in df.items() if c * 2 > len(active_facts)}
+               if len(active_facts) > 2 else set())
+    nw = _mwords(new_txt) - ambient
+    scores = sorted(((len(nw & (fw[f["id"]] - ambient)), f["id"])
+                     for f in active_facts), reverse=True)
+    top, top_id = scores[0]
+    if top >= 2:
+        return top_id
+    if top == 1 and sum(1 for sc, _ in scores if sc == 1) == 1:
+        return top_id
+    return None
 
 
 def _read_doc(path):
