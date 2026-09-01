@@ -13,7 +13,8 @@ _CUE_NUMBER_RE = re.compile(r"^\d+$")
 _TIMESTAMP_RE = re.compile(
     r"^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}"
 )
-_VOICE_TAG_RE = re.compile(r"<v\s+([^>]+)>(.*?)</v>", re.DOTALL)
+_VOICE_TAG_RE = re.compile(r"<v\b\s*([^>]*)>(.*?)</v>", re.DOTALL)
+_STRIP_TAGS_RE = re.compile(r"<[^>]+>")
 
 
 def _parse_vtt(raw: str) -> str:
@@ -21,18 +22,22 @@ def _parse_vtt(raw: str) -> str:
     pending_start = None
     for line in raw.splitlines():
         line = line.strip()
-        if not line or line == "WEBVTT" or _CUE_NUMBER_RE.match(line):
+        if not line or line.upper().startswith("WEBVTT") or _CUE_NUMBER_RE.match(line):
             continue
         if _TIMESTAMP_RE.match(line):
             pending_start = line.split("-->")[0].strip()
             continue
+        prefix = f"[{pending_start}] " if pending_start else ""
         m = _VOICE_TAG_RE.search(line)
         if m:
-            speaker, text = m.group(1).strip(), m.group(2).strip()
-            prefix = f"[{pending_start}] " if pending_start else ""
+            speaker = m.group(1).strip() or "Unidentified speaker"
+            text = _STRIP_TAGS_RE.sub("", m.group(2)).strip()
             lines.append(f"{prefix}{speaker}: {text}")
         else:
-            lines.append(line)
+            text = _STRIP_TAGS_RE.sub("", line).strip()
+            if text:
+                lines.append(f"{prefix}Unidentified speaker: {text}"
+                             if prefix else text)
     return "\n".join(lines)
 
 

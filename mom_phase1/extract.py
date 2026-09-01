@@ -267,6 +267,63 @@ def _is_aspiration(quote: str) -> bool:
     return bool(_ASPIRATION_RE.search(quote or "")) and not _MEASURABLE_RE.search(quote or "")
 
 
+# Logistics / scheduling chatter about the PROJECT, not the product being built.
+_LOGISTICS_RE = re.compile(
+    r"\b(reschedul\w*|re-?schedule"
+    r"|(?:move|push|shift|bump)\b[^.?!]{0,30}\b(?:session|meeting|call|sync|invite|slot)\b"
+    r"|send\b[^.?!]{0,25}\binvite\b|calendar (?:hold|invite)|same time next week"
+    r"|(?:talk|see you|meet|catch up)\b[^.?!]{0,15}\b(?:next week|thursday|monday|tuesday|wednesday|friday|then|soon)\b"
+    r"|review (?:the )?(?:mockups?|designs?|deck) (?:next|later)"
+    r"|mockups?\b[^.?!]{0,20}\b(?:running )?(?:a day )?late"
+    r"|pick (?:this |it )?up next (?:week|time)|regroup next week|circle back next"
+    r"|i'?ll (?:send|share)\b[^.?!]{0,20}\b(?:invite|calendar|note)s?)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_logistics(quote: str) -> bool:
+    return bool(_LOGISTICS_RE.search(quote or ""))
+
+
+# A speaker flagging that the topic is unsettled -- an open question, not a
+# fact. Scanned straight off the transcript because the model does not
+# reliably emit an ## OPEN_QUESTION block for these.
+_HEDGE_RE = re.compile(
+    r"\b(we (?:may be |might be |are )?misaligned|let me check (?:with|on)|"
+    r"still (?:checking|discussing|arguing|deciding|not sure)|"
+    r"we (?:haven'?t|have not) (?:decided|settled|agreed)|"
+    r"not (?:yet )?(?:sure|decided|settled)|to be (?:decided|determined|confirmed)|"
+    r"\btbd\b|open question|we disagree|we'?re not aligned|"
+    r"under discussion|circle back on|revisit (?:this|that) later|"
+    r"we might want to|don'?t build (?:it|that) yet|keep (?:it|that) in mind for now)\b",
+    re.IGNORECASE,
+)
+_SPEAKER_LINE_RE = re.compile(r"^(?:\[([^\]]+)\]\s*)?([^:]{1,40}):\s*(.+)$")
+
+
+def _scan_open_questions(transcript_text, already):
+    """Pull lines that flag an unsettled topic straight from the transcript
+    and turn them into open-question items. ``already`` is a set of
+    normalised quotes to skip (so a line the model already captured is not
+    duplicated)."""
+    out = []
+    for line in transcript_text.splitlines():
+        line = line.strip()
+        if not _HEDGE_RE.search(line):
+            continue
+        m = _SPEAKER_LINE_RE.match(line)
+        ts, spk, text = (m.group(1) or "not available", m.group(2).strip(),
+                         m.group(3).strip()) if m else ("not available",
+                                                        "Unidentified speaker", line)
+        if _normalise(text) in already or len(text.split()) < 4:
+            continue
+        out.append({"kind": "question", "feature": "", "summary": text.rstrip("."),
+                    "quote": text, "speaker": spk, "timestamp": ts,
+                    "verified": True, "match_score": 1.0})
+        already.add(_normalise(text))
+    return out
+
+
 def _unbundle(statement: dict, norm_transcript: str):
     """If the Quote already verifies as one contiguous span, return the
     statement unchanged. Otherwise, if it is 2+ sentences and each on its own
@@ -346,8 +403,9 @@ def extract_statements(transcript_text: str, known_features, model=None,
 
     kept, seen_quotes = [], set()
     for s in found:
-        if _is_banter(s["quote"]) or _is_reply_echo(s["quote"]):
-            continue  # reaction, meta-comment, or bare acknowledgement
+        if (_is_banter(s["quote"]) or _is_reply_echo(s["quote"])
+                or (s.get("kind") != "question" and _is_logistics(s["quote"]))):
+            continue  # reaction, acknowledgement, or project-scheduling chatter
         # An open question is one item -- verify its quote but never unbundle
         # or reconcile it.
         pieces = [s] if s.get("kind") == "question" else _unbundle(s, norm_transcript)
@@ -377,6 +435,10 @@ def extract_statements(transcript_text: str, known_features, model=None,
                 piece["summary"] = ("Turn into a concrete, testable requirement: "
                                     + piece["summary"].rstrip("."))
             kept.append(piece)
+
+    # Deterministic sweep for "we haven't decided / let me check / misaligned"
+    # lines the model skipped -- record them as open questions.
+    kept.extend(_scan_open_questions(transcript_text, seen_quotes))
     return kept
 
 

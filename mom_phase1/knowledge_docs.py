@@ -58,6 +58,11 @@ _NUM_TOKEN_RE = re.compile(r"\d[\d,]*")
 def _numbers(text):
     return {t.replace(",", "") for t in _NUM_TOKEN_RE.findall(text or "")}
 
+
+def _norm_q(text):
+    """Fold a quote for exact-match comparison (idempotency check)."""
+    return re.sub(r"\s+", " ", (text or "").lower()).strip(" \t\n\"'.,")
+
 _STOPWORDS = {"a", "an", "the", "for", "in", "on", "of", "to", "and", "or",
               "from", "as", "via", "with", "by", "at",
               "app", "flow", "feature", "screen", "page", "system", "module",
@@ -372,9 +377,24 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 n_unverified += 1
                 continue
 
+            # Idempotency: this exact quote is already recorded here (e.g. the
+            # same call re-processed) -- it is a re-confirmation, not a new fact.
+            nq = _norm_q(s["quote"])
+            if any(_norm_q(f["quote"]) == nq for f in all_facts):
+                extra_log.append(
+                    f'- {today}: {source_name} re-stated an already-recorded fact '
+                    f'for "{feature}" — no change.'
+                )
+                n_dup += 1
+                continue
+
             active = _active(all_facts)
 
             if not active:
+                # A "no change / stays as is" statement that lands on a brand
+                # new area with nothing to confirm adds nothing -- drop it.
+                if _NOCHANGE_RE.search(s["summary"] + " " + s["quote"]):
+                    continue
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
@@ -492,6 +512,12 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         else:
             user_story = ("; ".join(f["summary"].rstrip(".") for f in active_now)
                           + "." if active_now else "No confirmed requirements yet.")
+
+        # Don't create a brand-new doc that would carry nothing -- e.g. a
+        # dropped "stays as is" statement whose feature had no other content.
+        is_new_doc = feature not in existing
+        if is_new_doc and not all_facts and not new_questions:
+            continue
 
         doc_text = _render(feature, all_facts, new_questions,
                            sections["open_questions"], sections["change_log"],

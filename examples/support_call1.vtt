@@ -1,0 +1,57 @@
+WEBVTT
+
+1
+00:00:02.000 --> 00:00:07.500
+<v Nadia Farouk>Morning. Let's scope the support ticketing tool. First, how does a ticket get created?</v>
+
+2
+00:00:08.000 --> 00:00:13.000
+<v José García>A user submits a ticket with a title, a description, and a priority of Low, Medium, or High.</v>
+
+3
+00:00:13.500 --> 00:00:16.000
+<v Nadia Farouk>Understood. What happens to a High priority ticket?</v>
+
+4
+00:00:16.500 --> 00:00:21.000
+<v José García>A High priority ticket is auto-assigned to the on-call engineer immediately.</v>
+
+5
+00:00:21.500 --> 00:00:27.000
+<v José García>First response targets: High is four hours, Medium is one business day, Low is three business days.</v>
+
+6
+00:00:27.500 --> 00:00:31.000
+<v Nadia Farouk>Noted. Does the person who raised the ticket get told about progress?</v>
+
+7
+00:00:31.500 --> 00:00:36.000
+<v José García>The requester gets an email on every status change of their ticket.</v>
+
+8
+00:00:36.500 --> 00:00:40.000
+<v>Can a closed ticket be reopened later?</v>
+
+9
+00:00:40.500 --> 00:00:44.000
+<v José García>Yes, a requester can reopen a closed ticket at any time.</v>
+
+10
+00:00:44.500 --> 00:00:49.000
+<v Nadia Farouk>Hold on, I thought a ticket locks seven days after it's closed and can't be reopened.</v>
+
+11
+00:00:49.500 --> 00:00:52.000
+<v José García>We may be misaligned on that. Let me check with the team.</v>
+
+12
+00:00:52.500 --> 00:00:55.000
+<v Nadia Farouk>Okay. How was your holiday, by the way?</v>
+
+13
+00:00:55.500 --> 00:00:58.000
+<v José García>It was great, thanks. Let's keep going.</v>
+
+14
+00:00:58.500 --> 00:01:02.000
+<v Nadia Farouk>That's a good start. We'll pick up next week.</v>
