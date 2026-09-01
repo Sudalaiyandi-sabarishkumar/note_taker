@@ -110,6 +110,30 @@ part has neither, output the single line: NO STATEMENTS
 Output nothing before the first block or after the last."""
 
 
+def _coverage_instruction(already_summaries) -> str:
+    listed = "\n".join(f"- {a}" for a in already_summaries) or "(none)"
+    return f"""A first pass already extracted these statements from THIS part:
+{listed}
+
+Re-read the part. Output a ## STATEMENT block ONLY for a concrete requirement,
+decision, constraint, rule, number, limit, threshold, or policy about the
+product that a person actually stated here and that is NOT already covered by
+the list above. Same format as before:
+
+## STATEMENT
+Feature: <a BROAD feature area, 1-2 plain words>
+Summary: <one plain sentence>
+Quote: "<exact sentence(s) from THIS part, copied verbatim>"
+Speaker: <name exactly as written, or "Unidentified speaker">
+Timestamp: <the [HH:MM:SS...] prefix on that line, or "not available">
+
+Do not repeat, rephrase, or split anything already in the list. Do not infer
+or paraphrase -- the Quote must be word-for-word from THIS part. Skip
+reactions, opinions, scheduling and small talk. If nothing is missing, output
+the single line: NO STATEMENTS
+Output nothing before the first block or after the last."""
+
+
 def _normalise(s: str) -> str:
     """Fold quotes/whitespace/case so a verbatim quote still matches when the
     model tidied a curly apostrophe or collapsed a double space."""
@@ -365,6 +389,24 @@ def _looks_like_requirement(text: str) -> bool:
     return len(words) >= 5 and bool(_HAS_VERBISH_RE.search(text))
 
 
+_TS_PREFIX_RE = re.compile(r"^\[(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
+
+
+def _ts_from_transcript(quote: str, transcript_text: str):
+    """Find the transcript line that contains ``quote`` and return its
+    ``[HH:MM:SS]`` prefix, if any. Used to backfill a timestamp onto a
+    statement the model left un-timestamped (unbundled piece, paraphrase)."""
+    needle = _normalise(quote)
+    if not needle:
+        return ""
+    for line in transcript_text.splitlines():
+        if needle in _normalise(line):
+            m = _TS_PREFIX_RE.match(line.strip())
+            if m:
+                return m.group(1)
+    return ""
+
+
 def extract_statements(transcript_text: str, known_features, model=None,
                        progress=print):
     """Run the map step over every chunk and return grounded statement
@@ -390,13 +432,31 @@ def extract_statements(transcript_text: str, known_features, model=None,
         ]
         raw = chat(messages, model=model, show_progress=False)
         answer = strip_think(raw)
-        if answer.strip().upper().startswith("NO STATEMENTS"):
-            continue
-        blocks = parse_statement_blocks(answer)
+        blocks = [] if answer.strip().upper().startswith("NO STATEMENTS") \
+            else parse_statement_blocks(answer)
         found.extend(blocks)
         for b in blocks:
             if b["feature"] not in seen_features:
                 seen_features.append(b["feature"])
+
+        # Coverage pass: a second look at the SAME part, asking only for
+        # concrete requirements the first pass missed. A 7B under-extracts
+        # from dense spans; exact repeats are dropped by quote de-dup below,
+        # and reconcile handles near-repeats as DUPLICATE at merge time.
+        if os.environ.get("MOM_COVERAGE", "1") != "0" and len(chunk) > 400:
+            progress(f"  part {i}/{len(chunks)} (coverage check)...")
+            cov_raw = strip_think(chat(
+                [{"role": "system", "content": _SYSTEM},
+                 {"role": "user", "content":
+                     f"TRANSCRIPT PART {i} OF {len(chunks)}:\n{chunk}\n\n"
+                     + _coverage_instruction(b["summary"] for b in blocks)}],
+                model=model, show_progress=False))
+            if not cov_raw.strip().upper().startswith("NO STATEMENTS"):
+                cov_blocks = parse_statement_blocks(cov_raw)
+                found.extend(cov_blocks)
+                for b in cov_blocks:
+                    if b["feature"] not in seen_features:
+                        seen_features.append(b["feature"])
 
     spans = _candidate_spans(transcript_text)
     norm_spans = [_normalise(sp) for sp in spans]
@@ -404,7 +464,7 @@ def extract_statements(transcript_text: str, known_features, model=None,
     kept, seen_quotes = [], set()
     for s in found:
         if (_is_banter(s["quote"]) or _is_reply_echo(s["quote"])
-                or (s.get("kind") != "question" and _is_logistics(s["quote"]))):
+                or _is_logistics(s["quote"])):
             continue  # reaction, acknowledgement, or project-scheduling chatter
         # An open question is one item -- verify its quote but never unbundle
         # or reconcile it.
@@ -420,6 +480,13 @@ def extract_statements(transcript_text: str, known_features, model=None,
             ts = piece.get("timestamp", "").strip()
             if ts and ts.lower() != "not available" and ts not in transcript_text:
                 piece["timestamp"] = "not available"
+            # Recover a timestamp from the transcript line the (snapped) quote
+            # sits on -- e.g. an unbundled piece or a paraphrase the model
+            # left un-timestamped, but the .vtt line carries a [HH:MM:SS] prefix.
+            if piece.get("timestamp", "").strip().lower() in ("", "not available"):
+                recovered = _ts_from_transcript(piece["quote"], transcript_text)
+                if recovered:
+                    piece["timestamp"] = recovered
             if piece.get("kind") == "question" and not verified:
                 continue  # an ungrounded "open question" is just noise
             piece.setdefault("kind", "fact")
@@ -565,6 +632,27 @@ def _sig_words(text):
     return out
 
 
+# Words that must never START a feature name (a transcript filler the model
+# grabbed instead of a topic) and words that carry no topic on their own.
+_AREA_BAD_LEAD = {
+    "there", "here", "this", "that", "these", "those", "it", "they", "we",
+    "also", "and", "but", "so", "then", "the", "a", "an",
+    "yes", "no", "ok", "okay", "well", "just",
+}
+
+
+def _bad_area(name: str) -> bool:
+    """True if ``name`` is not a usable feature-doc title -- empty, led by a
+    transcript filler word, or made only of stopword/generic tokens."""
+    toks = _WORD_RE.findall((name or "").lower())
+    if not toks:
+        return True
+    if toks[0] in _AREA_BAD_LEAD:
+        return True
+    return all(t in _STORY_STOPWORDS or t in _GENERIC_WORDS or t in _AREA_BAD_LEAD
+               or len(t) < 3 for t in toks)
+
+
 def _clean_area(text):
     text = text.strip().strip('"').strip("*").strip()
     text = text.split(" (")[0].split(" -- ")[0].strip()  # drop echoed hints
@@ -576,7 +664,11 @@ def _clean_area(text):
         before, after = text[:m.start()].strip(), text[m.end():].strip()
         text = before or after
     words = [w for w in _decamel(text).split() if w]
-    return " ".join(words[:4])
+    # Drop a leading filler word ("There annual leave..." -> "annual leave...")
+    while words and words[0].lower() in _AREA_BAD_LEAD:
+        words = words[1:]
+    name = " ".join(words[:4])
+    return "" if _bad_area(name) else name
 
 
 _LEADING_VERBS = {
@@ -590,12 +682,185 @@ _LEADING_VERBS = {
 
 def _area_from_summary(summary, fallback):
     toks = _WORD_RE.findall(summary.lower())
-    while toks and toks[0] in (_LEADING_VERBS | _STORY_STOPWORDS):
+    while toks and toks[0] in (_LEADING_VERBS | _STORY_STOPWORDS | _AREA_BAD_LEAD):
         toks = toks[1:]
     sig = [w for w in toks
            if len(w) >= 4 and w not in _STORY_STOPWORDS and w not in _GENERIC_WORDS
-           and w not in _LEADING_VERBS]
-    return " ".join(w.title() for w in sig[:2]) or fallback
+           and w not in _LEADING_VERBS and w not in _AREA_BAD_LEAD]
+    name = " ".join(w.title() for w in sig[:2])
+    if name:
+        return name
+    return fallback if fallback and not _bad_area(fallback) else "Misc"
+
+
+# Minimal stoplist for the cohesion-split link graph: only function words and
+# a few universal UI nouns. Domain nouns (admin, role, course, catalog...) are
+# KEPT -- the ambient-word filter below removes whichever ones are so common
+# in THIS batch that they carry no signal.
+_LINK_STOP = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by",
+    "is", "are", "be", "will", "must", "can", "should", "would", "via", "from",
+    "as", "that", "this", "these", "those", "when", "after", "before", "only",
+    "also", "each", "all", "any", "not", "no", "it", "its", "they", "their",
+    "them", "we", "our", "you", "your", "page", "screen", "system", "feature",
+    "able", "into", "over", "then", "there", "here", "such", "per", "new",
+    "first", "release", "other", "another",
+}
+
+
+def _topic_words(text):
+    """Stemmed 4+ char content words with their first surface form --
+    ``({stem, ...}, {stem: 'surfaceword'})``. Used both for the split link
+    graph and for naming a cluster."""
+    stems, surface = set(), {}
+    for w in _WORD_RE.findall((text or "").lower()):
+        if len(w) < 4 or w in _LINK_STOP:
+            continue
+        st = _stem(w)
+        surface.setdefault(st, w)
+        stems.add(st)
+    return stems, surface
+
+
+_NUMBER_WORDS = {
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen",
+    "seventeen", "eighteen", "nineteen", "twenty", "thirty", "forty", "fifty",
+    "sixty", "seventy", "eighty", "ninety", "hundred", "thousand",
+    "hour", "hours", "day", "days", "week", "weeks", "month", "months",
+    "minute", "minutes", "second", "seconds", "percent", "star", "stars",
+}
+
+
+def _name_cluster(members, fallback, ambient=frozenset()):
+    """Name a cluster from the distinctive words that appear in the most of
+    its summaries (skipping ambient words, generic filler, and bare
+    numbers/units)."""
+    from collections import Counter
+    freq, surface = Counter(), {}
+    for s in members:
+        st, sf = _topic_words(s["summary"])
+        surface.update(sf)
+        for w in st:
+            sw = sf.get(w, w)
+            if (w in ambient or sw in _GENERIC_WORDS or sw in _NUMBER_WORDS
+                    or sw.isdigit()):
+                continue
+            freq[w] += 1
+    if not freq:
+        return _area_from_summary(members[0]["summary"], fallback)
+    # most common; tie-break toward the earlier-mentioned word for stability
+    ordered = sorted(freq, key=lambda w: (-freq[w], w))
+    picks = [surface[st] for st in ordered[:2]]
+    name = " ".join(w.title() for w in picks)
+    return name if not _bad_area(name) else _area_from_summary(
+        members[0]["summary"], fallback)
+
+
+# Broad/dumping-ground names a first call tends to produce -- a cohesion
+# split of one of these is almost always right.
+_DUMP_NAMES = {"misc", "general", "features", "feature", "requirements",
+               "admin", "admin role", "roles", "system", "product",
+               "tool", "platform", "overview", "scope"}
+
+
+def _is_dump_name(feat):
+    """A first-call catch-all label ('Admin Role', 'Ticketing Tool Features',
+    'Misc') as opposed to a specific feature name."""
+    low = feat.lower().strip()
+    if low in _DUMP_NAMES or _bad_area(feat):
+        return True
+    toks = _WORD_RE.findall(low)
+    # Only genuinely catch-all suffixes -- NOT "Settings"/"Module"/"Tool",
+    # which are normal parts of a specific feature name.
+    return bool(toks) and toks[-1] in {
+        "features", "functionality", "capabilities", "requirements",
+        "stuff", "things", "items", "misc",
+    }
+
+
+def _components(word_sets):
+    """Connected components of the 'share >= 1 word' graph. Returns a list of
+    index lists."""
+    n = len(word_sets)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a in range(n):
+        for b in range(a + 1, n):
+            if word_sets[a] & word_sets[b]:
+                parent[find(a)] = find(b)
+    comps = {}
+    for k in range(n):
+        comps.setdefault(find(k), []).append(k)
+    return list(comps.values())
+
+
+def cohesion_split(statements, existing):
+    """Split a NEW feature area that is really several unrelated topics (a
+    whole first call dumped into one doc) into one area per topic cluster.
+    Mutates ``s['feature']`` in place; returns ``[(old, [new, ...])]``.
+
+    Deliberately conservative -- it fires only when ALL of these hold:
+      * the area is not an existing doc and has >= 4 statements
+      * the statements form >= 2 clusters on the "share a content word" graph
+        (a genuinely single-topic area, where one recurring noun links
+        everything, is never split) -- for a catch-all-named area the
+        graph is retried with that recurring noun removed
+      * either the area's name is a catch-all label, or the split yields
+        >= 2 real clusters (2+ statements each)
+    """
+    if os.environ.get("MOM_NO_SPLIT"):
+        return []
+    by_feat = {}
+    for i, s in enumerate(statements):
+        by_feat.setdefault(s.get("feature", ""), []).append(i)
+
+    from collections import Counter
+    changes = []
+    for feat, idxs in by_feat.items():
+        if feat in existing or len(idxs) < 4:
+            continue
+        words = [_topic_words(statements[i]["summary"])[0] for i in idxs]
+        df = Counter()
+        for w in words:
+            df.update(w)
+        ambient = {k for k, c in df.items() if c > len(idxs) * 0.5}
+        dump = _is_dump_name(feat)
+
+        comps = _components(words)
+        # A dump doc where one noun ("ticket") repeats in every line collapses
+        # to a single component -- retry with the ambient nouns stripped so
+        # the real sub-topics separate. Only for catch-all-named areas: a
+        # specific name is trusted and never force-split this way.
+        if len(comps) < 2 and dump and ambient:
+            comps = _components([w - ambient for w in words])
+
+        if len(comps) < 2:
+            continue
+        real_clusters = sum(1 for m in comps if len(m) >= 2)
+        if not dump and real_clusters < 2:
+            continue
+
+        new_names = []
+        for members in comps:
+            local = [statements[idxs[m]] for m in members]
+            name = _name_cluster(local, feat, ambient)
+            for m in members:
+                statements[idxs[m]]["feature"] = name
+            new_names.append(name)
+        changes.append((feat, new_names))
+
+    if changes and os.environ.get("MOM_DEBUG"):
+        with open(os.environ["MOM_DEBUG"], "a") as _f:
+            for old, new in changes:
+                _f.write(f"=== SPLIT ===\n{old!r} -> {new}\n\n")
+    return changes
 
 
 def canonicalize_statements(statements, existing=None, model=None):
@@ -609,8 +874,11 @@ def canonicalize_statements(statements, existing=None, model=None):
     """
     existing = existing or {}
     n = len(statements)
-    fallback = [s.get("feature", "") or _area_from_summary(s["summary"], "Misc")
-                for s in statements]
+    fallback = [
+        (f if (f := s.get("feature", "")) and not _bad_area(f)
+         else _area_from_summary(s["summary"], "Misc"))
+        for s in statements
+    ]
     if n == 0 or (n < 2 and not existing):
         return fallback
     model = model or DEFAULT_MODEL
@@ -890,6 +1158,69 @@ def _content_words(text):
             if len(w) >= 3 and w not in _STORY_STOPWORDS}
 
 
+# Build/dev verbs that make a fact summary read like a ticket title rather
+# than a requirement ("Implement the export" -> "The export").
+_STUB_VERBS = (r"implement|build|define|specify|create|set\s*up|"
+               r"add(?:\s+support\s+for)?|introduce|develop|design|"
+               r"configure|enable")
+_STUB_LEAD_RE = re.compile(r"^(?:please\s+)?(?:" + _STUB_VERBS + r")\s+", re.IGNORECASE)
+_STUB_WANT_RE = re.compile(r"(,\s*I want\s+)(?:to\s+)?(?:" + _STUB_VERBS + r")\s+",
+                           re.IGNORECASE)
+
+
+def _destub(text: str) -> str:
+    if not _STUB_LEAD_RE.match(text or ""):
+        return text
+    out = _STUB_LEAD_RE.sub("", text, count=1).strip()
+    return (out[0].upper() + out[1:]) if out else text
+
+
+# Past-tense "we decided X" phrasing: the summary narrates the meeting rather
+# than stating the requirement.
+_NARRATION_LEAD_RE = re.compile(
+    r"^(?:please\s+)?(?:adjust|adjusted|maintain|maintained|retain|retained|"
+    r"keep|kept|clarif\w+|discuss\w+|note[d]?|decide[d]?|agree[d]?|review\w+|"
+    r"expand\w+|introduc\w+|reaffirm\w+|reiterat\w+|address\w+|"
+    r"defin\w+|establish\w+|determin\w+)\b",
+    re.IGNORECASE,
+)
+_QUOTE_LEAD_FILLER_RE = re.compile(
+    r"^(?:so|okay|ok|yeah|yes|no|well|right|sure|and|but|also|actually|"
+    r"look|listen|hold on|i mean|you know)[,\s]+", re.IGNORECASE)
+
+
+def _summary_from_quote(quote: str) -> str:
+    """Render a plain one-line summary straight from the client's words --
+    used when the model's own summary drifts from the quote."""
+    q = (quote or "").strip().strip('"').strip()
+    q = _QUOTE_LEAD_FILLER_RE.sub("", q).strip()
+    if not q:
+        return (quote or "").strip()
+    words = q.split()
+    if len(words) > 24:                       # keep it to the first clause-ish
+        cut = re.split(r"(?<=[,;:])\s", q)
+        q = cut[0] if cut and len(cut[0].split()) >= 6 else " ".join(words[:24])
+    q = q.rstrip(" .!?;:,") + "."
+    q = _destub(q[0].upper() + q[1:])
+    return q
+
+
+def fix_summary(summary: str, quote: str) -> str:
+    """Keep the model's summary unless it barely overlaps the quote's wording
+    or narrates the decision instead of stating it -- then rebuild it from
+    the quote. Never invents; only ever falls back to the client's own text."""
+    summary = (summary or "").strip()
+    if not summary:
+        return _summary_from_quote(quote)
+    sw = _content_words(summary)
+    if not sw:
+        return _summary_from_quote(quote)
+    overlap = len(sw & _content_words(quote)) / len(sw)
+    if overlap < 0.35 or _NARRATION_LEAD_RE.match(summary):
+        return _summary_from_quote(quote)
+    return summary
+
+
 def synthesize_user_story(feature, active_facts, model=None):
     """Return ONE user story ("As a <role>, I want <capability>[, so that
     <benefit>].") for the feature's CURRENT (non-superseded) facts.
@@ -905,7 +1236,7 @@ def synthesize_user_story(feature, active_facts, model=None):
     # can't be trusted. Not forced into "As a ... I want ..." shape (some
     # fact summaries are declarative and don't fit it); just the newest
     # requirement stated plainly, with a pointer to the rest.
-    newest = active_facts[-1]["summary"].strip().rstrip(".") + "."
+    newest = _destub(active_facts[-1]["summary"].strip()).rstrip(".") + "."
     extra = len(active_facts) - 1
     fallback = newest + (
         f" (Plus {extra} more requirement{'s' if extra > 1 else ''} below.)"
@@ -942,6 +1273,9 @@ no invented detail. Output only the story."""
             break
     if not story or not story.lower().lstrip("*_ ").startswith("as a"):
         return fallback
+    # "..., I want to implement the X ..." -> "..., I want the X ..." -- a
+    # build/dev verb after "I want" makes the story read like a ticket.
+    story = _STUB_WANT_RE.sub(r"\1", story, count=1)
 
     # Constrain the <role>: it must be a word that actually appears in this
     # doc's facts (stops a stale "learner" leaking from another domain).

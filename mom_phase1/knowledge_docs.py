@@ -40,6 +40,8 @@ import os
 import re
 from datetime import date
 
+from .extract import cohesion_split, fix_summary
+
 DOCS_DIR = os.environ.get("MOM_DOCS_DIR", "knowledge")
 
 # Phrases that mean "I am re-confirming, not changing". If a statement carries
@@ -289,6 +291,48 @@ def _render(feature, facts, new_questions, prior_questions_raw,
 # --------------------------------------------------------------------------
 # the merge
 # --------------------------------------------------------------------------
+def _rehome_orphan_questions(statements, existing, docs_dir):
+    """A new feature area whose statements are ALL open questions produces no
+    doc (nothing to anchor it). Rather than drop those questions, move each
+    onto the best-matching host -- a feature that gets facts this run, or an
+    existing doc -- by word overlap, falling back to the feature with the
+    most statements. If there is no possible host, leave it (it gets dropped
+    and logged downstream)."""
+    from collections import Counter
+    q_by_feat, fact_feats = {}, set()
+    for s in statements:
+        if s.get("kind") == "question":
+            q_by_feat.setdefault(s["feature"], []).append(s)
+        else:
+            fact_feats.add(s["feature"])
+
+    orphan_feats = [f for f in q_by_feat
+                    if f not in fact_feats and f not in existing]
+    if not orphan_feats:
+        return
+
+    counts = Counter(s["feature"] for s in statements
+                     if s.get("kind") != "question")
+    host_text = {f: f for f in fact_feats}
+    for name, path in existing.items():
+        try:
+            with open(path, encoding="utf-8") as fh:
+                host_text[name] = name + " " + fh.read()
+        except OSError:
+            host_text[name] = name
+    if not host_text:
+        return
+
+    for of in orphan_feats:
+        for s in q_by_feat[of]:
+            qwords = _mwords(s["summary"] + " " + s["quote"])
+            best = max(
+                host_text,
+                key=lambda h: (len(qwords & _mwords(host_text[h])), counts.get(h, 0)),
+            )
+            s["feature"] = best
+
+
 def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                      story_fn=None, canon_fn=None):
     """Write/update one doc per feature. Returns a list of per-feature
@@ -325,6 +369,21 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     for s in statements:
         s["feature"] = match_existing_feature(s["feature"], known)
 
+    # Cohesion split: if a NEW area accumulated statements about several
+    # unrelated topics (a whole first call dumped into one doc), break it
+    # into one area per topic cluster, then re-check against existing docs.
+    split_changes = cohesion_split(statements, existing)
+    if split_changes:
+        for s in statements:
+            s["feature"] = match_existing_feature(s["feature"], known)
+
+    # Re-home orphan questions: a new area that is ALL open questions and no
+    # facts would be dropped (it can't stand as its own doc). Move its
+    # questions onto the most relevant doc that DOES get facts this run --
+    # a genuine ambiguity should not vanish just because it was routed to
+    # its own heading.
+    _rehome_orphan_questions(statements, existing, docs_dir)
+
     by_feature = {}
     for s in statements:
         by_feature.setdefault(s["feature"], []).append(s)
@@ -351,6 +410,8 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         n_new = n_dup = n_change = n_review = n_unverified = n_open = 0
 
         prior_q = sections["open_questions"]
+        prior_q_norm = _norm_q(prior_q)
+        seen_oq = set()  # normalised OPEN QUESTION quotes already filed this run
         for i, s in enumerate(group, start=1):
             attribution = f"{s['speaker']}, {s['timestamp']} (source: {source_name}, {today})"
             q_id = f"Q-{today}-{_slug(feature)}-{i}"
@@ -361,7 +422,10 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                     f'— raised by {s["speaker"]}, {source_name} ({today})\n'
                     f'  - *"{s["quote"]}"*'
                 )
-                if s["quote"] not in prior_q:  # skip a repeat of the same quote
+                nq_oq = _norm_q(s["quote"])
+                if (s["quote"] not in prior_q and nq_oq not in prior_q_norm
+                        and nq_oq not in seen_oq):
+                    seen_oq.add(nq_oq)
                     new_questions.append(block)
                     n_open += 1
                 continue
@@ -387,6 +451,12 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 )
                 n_dup += 1
                 continue
+
+            # Summary quality: a model summary that narrates the decision
+            # ("Maintained existing email notifications") instead of restating
+            # the requirement gets replaced with a plain rendering of the
+            # client's own words.
+            s["summary"] = fix_summary(s["summary"], s["quote"])
 
             active = _active(all_facts)
 
@@ -442,26 +512,29 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
-                if same_call or not connected:
-                    # same_call: a speaker doesn't reverse their own requirement
-                    # inside one call. not connected: the "change" shares no
-                    # word with the fact it supposedly overrides -- almost
-                    # always a misroute. Either way, keep both, supersede
-                    # nothing, and flag it.
-                    why = ("both are from the same call" if same_call
-                           else "it shares no wording with EF-"
-                                f"{target_id}, so this may be a misfiled statement")
+                if same_call:
+                    # A speaker does not reverse their own requirement inside
+                    # ONE call -- these are complementary. Keep both, no flag.
+                    extra_log.append(
+                        f'- {today}: EF-{next_id} added for "{feature}" from '
+                        f'{source_name} (complementary to EF-{target_id}, same call).'
+                    )
+                    n_new += 1
+                elif not connected:
+                    # The "change" shares no word with the fact it supposedly
+                    # overrides -- almost certainly a misfiled statement. Keep
+                    # both, supersede nothing, flag for review.
                     new_questions.append(
                         f'- **{q_id}** [NEEDS REVIEW]: {source_name} statement for '
-                        f'"{feature}" was flagged as changing EF-{target_id}, but '
-                        f'{why}. Confirm whether it belongs here.{reason_txt}\n'
+                        f'"{feature}" was flagged as changing EF-{target_id}, but it '
+                        f'shares no wording with it and may be misfiled.{reason_txt}\n'
                         f'  - New: *"{s["quote"]}"* — {attribution}\n'
                         f'  - EF-{target_id}: *"{target["quote"]}"* — {target["attribution"]}'
                     )
                     extra_log.append(
                         f'- {today}: EF-{next_id} added for "{feature}" from '
                         f'{source_name} (reconciler said CHANGE vs EF-{target_id}; '
-                        f'not applied -- {why}).'
+                        f'not applied -- no shared wording).'
                     )
                     n_review += 1
                 else:
@@ -513,10 +586,23 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
             user_story = ("; ".join(f["summary"].rstrip(".") for f in active_now)
                           + "." if active_now else "No confirmed requirements yet.")
 
-        # Don't create a brand-new doc that would carry nothing -- e.g. a
-        # dropped "stays as is" statement whose feature had no other content.
+        # Don't create a brand-new doc that carries no established fact -- a
+        # doc that is nothing but open questions / unverified citations is
+        # noise (usually a hedge-scan line or a mis-extracted fragment).
         is_new_doc = feature not in existing
-        if is_new_doc and not all_facts and not new_questions:
+        if is_new_doc and not all_facts:
+            if new_questions:
+                summary.append(
+                    f"- {feature}: {len(new_questions)} open question(s) with no "
+                    f"established fact — doc not created (see other docs)")
+            continue
+
+        # Nothing actually changed on an existing doc (every statement was a
+        # bare restatement handled without a log entry) -- leave it untouched
+        # rather than append an empty run line to its Change Log.
+        touched = any((n_new, n_change, n_dup, n_review, n_unverified, n_open)) \
+            or bool(extra_log)
+        if not is_new_doc and not touched:
             continue
 
         doc_text = _render(feature, all_facts, new_questions,
