@@ -1,0 +1,13 @@
+Priya Nair: Call three. Two changes, one confirmation, and we close a couple of open items.
+Jose Ruiz: Change one: a provider must now accept a job within 30 minutes, not 60. After 30 minutes it still goes to the manual dispatch queue.
+Priya Nair: Got it. Change two?
+Jose Ruiz: Bring back phone support. Customers can reach support by phone, email, or in-app chat.
+Priya Nair: Good. And weekend slots - any decision?
+Jose Ruiz: Weekend slots are allowed from launch, Saturday and Sunday, 9am to 5pm. That resolves last call's open question.
+Priya Nair: The call-out fee - still 45 dollars?
+Jose Ruiz: The 45 dollar call-out fee is unchanged.
+Priya Nair: One new idea - a loyalty discount for repeat customers?
+Jose Ruiz: We might do a loyalty discount for repeat customers, but it's not decided. Keep it in mind, don't build it yet.
+Priya Nair: Noted. By the way, how was the conference?
+Jose Ruiz: Really good, thanks. That's everything for today.
+Priya Nair: Thanks all.

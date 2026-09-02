@@ -1,0 +1,31 @@
+Priya Nair: Morning everyone. Let's scope the HomeFix booking platform. Start with how a customer books a job.
+Jose Ruiz: A customer picks a service category, describes the problem, and picks a time window. The booking is confirmed only once a provider accepts it.
+Priya Nair: How is a provider chosen?
+Jose Ruiz: The system auto-assigns the nearest available provider who has a rating of at least four stars. If no provider accepts within 60 minutes, the job goes to a manual dispatch queue.
+Priya Nair: Good. What does the customer see while they wait?
+Jose Ruiz: A live status screen showing the assigned provider's name, photo, and estimated arrival time, once the job is accepted.
+Priya Nair: Accessibility - anything specific there?
+Jose Ruiz: The booking screens must meet WCAG 2.1 AA, and the whole flow has to work in a mobile browser without a native app.
+Priya Nair: Provider onboarding?
+Jose Ruiz: A new provider signs up, uploads their trade qualifications, and is activated only after an admin approves them. Providers cannot approve themselves.
+Priya Nair: On notifications - what gets sent to the customer?
+Jose Ruiz: The customer gets an email when the booking is confirmed and another when the provider is on the way.
+Priya Nair: Anything else on notifications?
+Jose Ruiz: Yes, also send the customer an SMS when the provider is fifteen minutes away.
+Priya Nair: Let's talk money.
+Jose Ruiz: Customers pay by card or cash on completion, but an itemised invoice is emailed within 24 hours of the job closing.
+Priya Nair: Is there a minimum charge?
+Jose Ruiz: There is a 45 dollar call-out fee, and it applies even if the customer cancels after the provider has already been dispatched.
+Priya Nair: Cancellations in general?
+Jose Ruiz: A customer can cancel free of charge up to two hours before the window starts. Within two hours, the call-out fee is charged. Three cancellations in a rolling 30 days and the account is flagged for review.
+Priya Nair: Ratings?
+Jose Ruiz: After the job the customer rates the provider from one to five stars and can leave an optional written review. The provider's average rating is shown publicly on their profile.
+Priya Nair: Is there a quick way to re-book the same provider?
+Jose Ruiz: There is a re-book button that repeats a customer's last job in one tap.
+Priya Nair: What about refunds if the customer is unhappy with the work?
+Jose Ruiz: We haven't decided the refund window yet - that one is still open.
+Priya Nair: Okay, flag it. And honestly, the whole booking flow should just feel effortless.
+Jose Ruiz: Noted. One more - we're still checking whether weekend slots are allowed at launch.
+Priya Nair: Fine. Separately, can we push next week's review to Thursday?
+Jose Ruiz: Thursday works for me. I'll send an updated invite.
+Priya Nair: Thanks all, talk then.
