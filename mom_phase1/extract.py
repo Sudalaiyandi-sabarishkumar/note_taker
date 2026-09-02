@@ -325,16 +325,25 @@ _UNDECIDED_RE = re.compile(
     r"|not (?:yet )?decided|don'?t build (?:it|this|that) yet|not for (?:now|launch|v1|the mvp|version one)"
     r"|keep (?:it|this|that) in mind (?:for now)?|park(?:ed|ing)? (?:it|this)(?: for now)?"
     r"|revisit\b[^.?!]{0,30}\blater|defer(?:red)?\b[^.?!]{0,15}\b(?:to|until)|placeholder for now"
-    r"|remains? (?:undecided|undetermined|open|an open question)"
+    r"|remains? (?:undecided|undetermined|open)(?!\s+question)"
     r")\b",
     re.IGNORECASE,
 )
+# Language that CLOSES a question -- overrides a stray "open question" /
+# "undecided" mention in the same sentence ("that resolves last call's open
+# question", "we decided X").
+_RESOLVES_RE = re.compile(
+    r"\b(?:resolv\w+|clos\w+|settl\w+|answer\w+)\b[^.?!]{0,25}"
+    r"\b(?:open question|last (?:week|call)|question|it|that)\b"
+    r"|\b(?:we|they)\s+(?:have\s+)?(?:decided|agreed|settled|confirmed)\b"
+    r"(?![^.?!]{0,12}\bnot\b)",
+    re.IGNORECASE)
 
 
 def _is_undecided(text: str) -> bool:
     t = text or ""
-    # "we decided X" / "that resolves it" are NOT undecided -- a bare negation
-    # must be present for the "...decided" arm.
+    if _RESOLVES_RE.search(t):
+        return False
     return bool(_UNDECIDED_RE.search(t))
 
 
@@ -1166,8 +1175,9 @@ GAP: Can the customer opt out of confirmation emails? [from EF-1]
 Now do the same for the requirements above. One per line, EXACTLY this form:
 GAP: <a concrete question> [from EF-<n>]
 
-Give at least one gap unless the feature is genuinely trivial; only then
-output NONE."""
+Never ask about a value, range, or rule a requirement already states (if a
+fact says "one to five stars", do NOT ask the maximum rating). Give at most
+TWO gaps -- the most important. If the requirements are complete, output NONE."""
     try:
         raw = strip_think(chat(
             [{"role": "system", "content": _GAP_SYSTEM},
@@ -1178,23 +1188,36 @@ output NONE."""
         return []
     if raw.strip().upper().startswith("NONE"):
         return []
-    valid = {f["id"] for f in active_facts}
+    by_id = {f["id"]: f for f in active_facts}
     fact_words = _content_words(" ".join(f["summary"] for f in active_facts))
     out = []
     for m in _GAP_LINE_RE.finditer(raw):
         q = m.group(1).strip().rstrip(".") + "?"
         q = re.sub(r"\?+$", "?", q)
-        refs = [int(x) for x in re.findall(r"EF-(\d+)", m.group(2))
-                if int(x) in valid]
+        refs = [int(x) for x in re.findall(r"EF-(\d+)", m.group(2)) if int(x) in by_id]
         if not refs:
             continue
-        # Guard: a "gap" that shares no vocabulary with any fact is usually
-        # the model going off-piste -- drop it.
-        if not (_content_words(q) & fact_words):
+        qw = _content_words(q) - _STORY_GLUE
+        # Off-piste: shares no vocabulary with any fact.
+        if not (qw & fact_words):
+            continue
+        # Already answered by the cited fact(s):
+        cited_text = " ".join(by_id[r]["summary"] + " " + by_id[r]["quote"]
+                              for r in refs)
+        cited = _content_words(cited_text)
+        if qw and qw <= cited:
+            continue
+        # ...asks for a limit/count/range that the cited fact already gives.
+        if (re.search(r"\b(maximum|minimum|max|min|how many|how much|"
+                      r"what (?:is|are) the (?:limit|range|number|count))\b", q, re.I)
+                and re.search(r"\b(?:one|two|three|four|five|ten|\d+)\b"
+                              r"[^.?!]{0,20}\b(?:to|-|through|and)\b"
+                              r"[^.?!]{0,10}\b(?:one|two|three|four|five|ten|\d+)\b"
+                              r"|\bup to \d+|\bbetween \w+ and \w+", cited_text, re.I)):
             continue
         if q.lower() not in {o["question"].lower() for o in out}:
             out.append({"question": q, "refs": refs})
-    return out[:3]
+    return out[:2]
 
 
 # --------------------------------------------------------------------------
@@ -1367,8 +1390,13 @@ def fix_summary(summary: str, quote: str) -> str:
     sw = _content_words(summary)
     if not sw:
         return _summary_from_quote(quote)
-    overlap = len(sw & _content_words(quote)) / len(sw)
-    if overlap < 0.35 or _NARRATION_LEAD_RE.match(summary):
+    qw = _content_words(quote)
+    overlap = len(sw & qw) / len(sw)
+    # Over-reach: the summary adds 2+ substantive words the quote never uses
+    # ("...with specific response time" on a quote that says none of that).
+    novel = {w for w in (sw - qw)
+             if len(w) >= 4 and w not in _STORY_GLUE and w not in _NUMBER_WORDS}
+    if overlap < 0.35 or len(novel) >= 2 or _NARRATION_LEAD_RE.match(summary):
         return _summary_from_quote(quote)
     return summary
 

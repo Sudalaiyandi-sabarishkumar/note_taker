@@ -384,6 +384,17 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     # its own heading.
     _rehome_orphan_questions(statements, existing, docs_dir)
 
+    # Every open-question quote already recorded ANYWHERE in the knowledge
+    # base -- so a question that got re-homed to a different doc than last
+    # time isn't filed twice.
+    kb_questions = ""
+    for _p in existing.values():
+        try:
+            with open(_p, encoding="utf-8") as _f:
+                kb_questions += _norm_q(_split_sections(_f.read())["open_questions"])
+        except OSError:
+            pass
+
     by_feature = {}
     for s in statements:
         by_feature.setdefault(s["feature"], []).append(s)
@@ -414,7 +425,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         seen_oq = set()  # normalised OPEN QUESTION quotes already filed this run
         for i, s in enumerate(group, start=1):
             attribution = f"{s['speaker']}, {s['timestamp']} (source: {source_name}, {today})"
-            q_id = f"Q-{today}-{_slug(feature)}-{i}"
+            q_id = f"Q-{today}-{source_name}-{_slug(feature)}-{i}"
 
             if s.get("kind") == "question":
                 block = (
@@ -424,9 +435,10 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 )
                 nq_oq = _norm_q(s["quote"])
                 # near-duplicate: one quote contained in another already filed
-                # (e.g. "X still undecided" vs "X still undecided. Finance is
-                # discussing it.") -- keep only the first.
+                # here, OR the same quote already recorded in another doc
+                # (re-homed differently between runs) -- keep only the first.
                 dup = (s["quote"] in prior_q or nq_oq in prior_q_norm
+                       or (len(nq_oq) >= 20 and nq_oq in kb_questions)
                        or any((nq_oq in seen or seen in nq_oq)
                               and min(len(nq_oq), len(seen)) >= 20
                               for seen in seen_oq))
@@ -552,20 +564,43 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                     )
                     n_review += 1
                 else:
-                    # Keep the old fact, mark it superseded, add the new one --
-                    # the Established Facts section stays complete.
                     aim = next(f for f in active if f["id"] == aim_id)
-                    aim["superseded_by"] = next_id
                     redirect = ("" if aim_id == target_id else
                                 f' (reconciler pointed at EF-{target_id}; '
                                 f're-aimed at EF-{aim_id} by wording)')
-                    extra_log.append(
-                        f'- {today}: EF-{aim_id} for "{feature}" superseded by '
-                        f'EF-{next_id} (from {source_name}).{redirect}{reason_txt}\n'
-                        f'  - was: *"{aim["quote"]}"* — {aim["attribution"]}\n'
-                        f'  - now: *"{s["quote"]}"* — {attribution}'
-                    )
-                    n_change += 1
+                    # Multi-part target (e.g. an SLA table with three tiers)
+                    # that the new statement only partly covers -- do NOT
+                    # strike the whole thing; keep both and flag which parts.
+                    partial = (_is_multipart(aim["quote"])
+                               and len(_numish(s["quote"]) & _numish(aim["quote"]))
+                                   < len(_numish(aim["quote"])))
+                    if partial:
+                        new_questions.append(
+                            f'- **{q_id}** [NEEDS REVIEW]: EF-{next_id} updates '
+                            f'PART of EF-{aim_id} for "{feature}" -- EF-{aim_id} '
+                            f'lists more than one value and the rest may still '
+                            f'hold. Confirm which parts EF-{next_id} replaces.'
+                            f'{redirect}\n'
+                            f'  - EF-{aim_id}: *"{aim["quote"]}"* — {aim["attribution"]}\n'
+                            f'  - EF-{next_id}: *"{s["quote"]}"* — {attribution}'
+                        )
+                        extra_log.append(
+                            f'- {today}: EF-{next_id} added for "{feature}" from '
+                            f'{source_name} -- partially updates EF-{aim_id} '
+                            f'(multi-value fact; not fully superseded).'
+                        )
+                        n_review += 1
+                    else:
+                        # Keep the old fact, mark it superseded, add the new
+                        # one -- the Established Facts section stays complete.
+                        aim["superseded_by"] = next_id
+                        extra_log.append(
+                            f'- {today}: EF-{aim_id} for "{feature}" superseded by '
+                            f'EF-{next_id} (from {source_name}).{redirect}{reason_txt}\n'
+                            f'  - was: *"{aim["quote"]}"* — {aim["attribution"]}\n'
+                            f'  - now: *"{s["quote"]}"* — {attribution}'
+                        )
+                        n_change += 1
                 next_id += 1
 
             elif _NOCHANGE_RE.search(s["summary"] + " " + s["quote"]):
@@ -593,21 +628,29 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         active_now = _active(all_facts)
 
         # Gap analysis: name decisions the confirmed facts leave unmade.
-        # Only when this run actually changed the fact set, and only gaps not
-        # already recorded, so re-processing a call does not pile them up.
-        if gap_fn and (n_new or n_change):
-            prior_q_lc = _norm_q(prior_q)
-            existing_q = "\n".join(new_questions).lower()
+        # Only when this run adds a NEW fact (not a mere change/restate), and
+        # capped so a doc never drowns in gap questions.
+        _GAP_CAP = 2
+        if gap_fn and n_new:
+            have = prior_q.count("[GAP]") + sum("[GAP]" in q for q in new_questions)
+            prior_topics = [_mwords(ln) for ln in prior_q.splitlines()
+                            if "QUESTION]" in ln or "[GAP]" in ln]
+            prior_topics += [_mwords(q.splitlines()[0]) for q in new_questions]
             for g in gap_fn(feature, active_now):
-                nq = _norm_q(g["question"])
-                if nq in prior_q_lc or nq in existing_q:
-                    continue
+                if have >= _GAP_CAP:
+                    break
+                gt = _mwords(g["question"])
+                if any(len(gt & pt) >= 2 for pt in prior_topics):
+                    continue  # already covered by an existing question/gap
                 refs = ", ".join(f"EF-{r}" for r in g["refs"])
-                gid = f"G-{today}-{_slug(feature)}-{len(new_questions) + 1}"
+                gid = (f"G-{today}-{source_name}-{_slug(feature)}-"
+                       f"{len(new_questions) + 1}")
                 new_questions.append(
                     f'- **{gid}** [GAP]: {g["question"]} — not yet decided; '
                     f'follows from {refs}. (raised by gap analysis, '
                     f'{source_name} {today})')
+                prior_topics.append(gt)
+                have += 1
                 n_open += 1
 
         run_line = (
@@ -655,7 +698,167 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         if n_unverified: bits.append(f"{n_unverified} unverified")
         if n_open: bits.append(f"{n_open} open question(s)")
         summary.append(f"- {feature}: " + ", ".join(bits) + f"  ->  {path}")
+
+    # Cross-doc passes over the whole knowledge base: close open questions a
+    # later fact has answered, and flag facts in different docs that
+    # contradict each other on a number.
+    for line in resolve_open_questions(docs_dir, today):
+        summary.append(line)
+    for line in flag_cross_doc_contradictions(docs_dir, today):
+        summary.append(line)
     return summary
+
+
+# --------------------------------------------------------------------------
+# cross-doc passes: question resolution + contradiction detection
+# --------------------------------------------------------------------------
+_Q_BLOCK_RE = re.compile(
+    r"(^- \*\*Q-[^\n*]+\*\* \[OPEN QUESTION\]:.*?)(?=^\s*- \*\*[QGX]-|\Z)",
+    re.DOTALL | re.MULTILINE)
+_STOP_TOPIC = {
+    "the", "a", "an", "and", "or", "of", "to", "in", "on", "for", "with", "by",
+    "is", "are", "was", "were", "be", "been", "this", "that", "these", "those",
+    "course", "learner", "user", "admin", "instructor", "page", "feature",
+    "system", "content", "customer", "provider", "there", "their", "them",
+    "what", "when", "how", "who", "which", "why", "should", "would", "does",
+    "will", "can", "must", "may", "happen", "happens", "decide", "decided",
+    "decision", "needed", "still", "yet", "resolve", "resolved", "confirm",
+    "not", "any", "each", "some", "before", "after", "within",
+}
+
+
+def _topicw(text):
+    return {w[:-1] if len(w) > 4 and w.endswith("s") else w
+            for w in re.findall(r"[a-z0-9]{4,}", (text or "").lower())
+            if w not in _STOP_TOPIC}
+
+
+def _all_active_facts(docs_dir):
+    """[(feature_name, path, fact_dict), ...] for every non-superseded fact."""
+    out = []
+    for name, path in discover_features(docs_dir).items():
+        try:
+            _, facts = _read_doc(path)
+        except OSError:
+            continue
+        for f in _active(facts):
+            out.append((name, path, f))
+    return out
+
+
+def resolve_open_questions(docs_dir=None, today=None):
+    """Mark an [OPEN QUESTION] / [GAP] as [RESOLVED] once an active fact --
+    in any doc -- clearly answers it (>= 2 shared distinctive topic words).
+    Rewrites only the docs that changed. Returns human-readable lines."""
+    docs_dir = docs_dir or DOCS_DIR
+    today = today or date.today().isoformat()
+    pool = _all_active_facts(docs_dir)
+    results = []
+    for name, path in discover_features(docs_dir).items():
+        try:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+        except OSError:
+            continue
+        sec = _split_sections(text)
+        oq = sec["open_questions"]
+        if "[OPEN QUESTION]" not in oq:
+            continue
+        changed = False
+
+        def _resolve(m):
+            nonlocal changed
+            block = m.group(1)
+            first = block.splitlines()[0]
+            qtext = first.split("]:", 1)[1] if "]:" in first else first
+            qw = _topicw(qtext)
+            if len(qw) < 2:
+                return block
+            qnums = _numish(qtext)
+            for fname, _fp, fact in pool:
+                fbody = fact["summary"] + " " + fact["quote"]
+                fw = _topicw(fbody)
+                shared = len(qw & fw)
+                answers = shared >= 3 or (shared >= 2 and qnums <= _numish(fbody))
+                if answers:
+                    changed = True
+                    nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
+                    return (nb + f'\n  - resolved by {fname} EF-{fact["id"]} '
+                            f'({today}): *"{fact["quote"]}"*\n')
+            return block
+
+        new_oq = _Q_BLOCK_RE.sub(_resolve, oq)
+        if changed:
+            new_text = text.replace(f"## Open Questions / Ambiguities\n{oq}",
+                                    f"## Open Questions / Ambiguities\n{new_oq}", 1)
+            if new_text != text:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(new_text)
+                results.append(f"- resolved open question(s) in {name}")
+    return results
+
+
+def flag_cross_doc_contradictions(docs_dir=None, today=None):
+    """Two active facts in DIFFERENT docs that share a topic (>= 2 distinctive
+    words) but carry different numbers get a [NEEDS REVIEW] cross-reference in
+    both docs. Idempotent -- skips a pair already flagged."""
+    docs_dir = docs_dir or DOCS_DIR
+    today = today or date.today().isoformat()
+    pool = _all_active_facts(docs_dir)
+    pending = {}  # path -> list[str] of review lines to append
+    seen_pairs = set()
+    for i in range(len(pool)):
+        n1, p1, f1 = pool[i]
+        w1, num1 = _topicw(f1["summary"] + " " + f1["quote"]), _numish(f1["quote"])
+        if not num1:
+            continue
+        for j in range(i + 1, len(pool)):
+            n2, p2, f2 = pool[j]
+            if p1 == p2:
+                continue
+            w2, num2 = _topicw(f2["summary"] + " " + f2["quote"]), _numish(f2["quote"])
+            if not num2 or (num1 & num2) or len(w1 & w2) < 2:
+                continue
+            key = tuple(sorted((f"{n1}#{f1['id']}", f"{n2}#{f2['id']}")))
+            if key in seen_pairs:
+                continue
+            seen_pairs.add(key)
+            line1 = (f'- **X-{today}-{_slug(n1)}-{f1["id"]}** [NEEDS REVIEW]: '
+                     f'EF-{f1["id"]} here may contradict {n2} EF-{f2["id"]} '
+                     f'({", ".join(sorted(num2))} vs {", ".join(sorted(num1))}) '
+                     f'on a shared topic. Confirm which is current.\n'
+                     f'  - here: *"{f1["quote"]}"*\n'
+                     f'  - {n2} EF-{f2["id"]}: *"{f2["quote"]}"*')
+            line2 = (f'- **X-{today}-{_slug(n2)}-{f2["id"]}** [NEEDS REVIEW]: '
+                     f'EF-{f2["id"]} here may contradict {n1} EF-{f1["id"]} '
+                     f'({", ".join(sorted(num1))} vs {", ".join(sorted(num2))}) '
+                     f'on a shared topic. Confirm which is current.\n'
+                     f'  - here: *"{f2["quote"]}"*\n'
+                     f'  - {n1} EF-{f1["id"]}: *"{f1["quote"]}"*')
+            pending.setdefault(p1, []).append(line1)
+            pending.setdefault(p2, []).append(line2)
+
+    results = []
+    for path, lines in pending.items():
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        fresh = [ln for ln in lines if ln.splitlines()[0].split("]:", 1)[-1][:60]
+                 not in text]
+        if not fresh:
+            continue
+        sec = _split_sections(text)
+        oq = sec["open_questions"].strip()
+        oq = "" if oq.lower() in ("- none.", "none.", "none", "") else oq
+        new_oq = "\n\n".join([p for p in (oq, "\n\n".join(fresh)) if p])
+        new_text = text.replace(
+            f"## Open Questions / Ambiguities\n{sec['open_questions']}",
+            f"## Open Questions / Ambiguities\n{new_oq}\n", 1)
+        if new_text != text:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(new_text)
+            results.append(f"- flagged possible contradiction in "
+                           f"{os.path.basename(path)[:-3]}")
+    return results
 
 
 # --------------------------------------------------------------------------
@@ -699,6 +902,23 @@ def _best_supersede_target(new_txt, active_facts):
     if top == 1 and sum(1 for sc, _ in scores if sc == 1) == 1:
         return top_id
     return None
+
+
+_NUMWORD_RE = re.compile(
+    r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+    r"fifteen|twenty|thirty|forty|fifty|sixty|ninety|hundred|\d+)\b", re.I)
+
+
+def _numish(text):
+    return {m.lower() for m in _NUMWORD_RE.findall(text or "")}
+
+
+def _is_multipart(quote):
+    """True if the quote packs 2+ number-bearing clauses -- e.g. an SLA table
+    'High is four hours, Medium is one business day, Low is three business
+    days'. A CHANGE that only mentions one of them must NOT strike the whole."""
+    numbered = [p for p in re.split(r"[;,]", quote or "") if _NUMWORD_RE.search(p)]
+    return len(numbered) >= 2
 
 
 def _read_doc(path):
