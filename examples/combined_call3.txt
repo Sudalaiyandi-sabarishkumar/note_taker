@@ -1,13 +1,23 @@
-Priya Nair: Call three. Two changes, one confirmation, and we close a couple of open items.
-Jose Ruiz: Change one: a provider must now accept a job within 30 minutes, not 60. After 30 minutes it still goes to the manual dispatch queue.
-Priya Nair: Got it. Change two?
+Priya Nair: Call three. Refinements, and we close out a few open items.
+Jose Ruiz: First, change the Pro response-time target from 8 hours to 4 hours. Basic and Enterprise stay the same.
+Priya Nair: Got it. Next?
 Jose Ruiz: Bring back phone support. Customers can reach support by phone, email, or in-app chat.
-Priya Nair: Good. And weekend slots - any decision?
+Priya Nair: Good. Weekend slots - any decision?
 Jose Ruiz: Weekend slots are allowed from launch, Saturday and Sunday, 9am to 5pm. That resolves last call's open question.
+Priya Nair: And languages?
+Jose Ruiz: Spanish is confirmed for the initial launch, alongside English.
 Priya Nair: The call-out fee - still 45 dollars?
 Jose Ruiz: The 45 dollar call-out fee is unchanged.
-Priya Nair: One new idea - a loyalty discount for repeat customers?
+Priya Nair: The masked-number system for calls?
+Jose Ruiz: Drop the masked number. Show the provider's real phone number on the status screen instead.
+Priya Nair: Three quick housekeeping items before we move on.
+Jose Ruiz: The review-hold threshold stays at three point five stars, the weekly Friday payout is unchanged, and shorten the manual-dispatch window from 60 minutes to 45 minutes.
+Priya Nair: One new idea from the customer team - a loyalty discount for repeat customers?
 Jose Ruiz: We might do a loyalty discount for repeat customers, but it's not decided. Keep it in mind, don't build it yet.
-Priya Nair: Noted. By the way, how was the conference?
+Priya Nair: Finance side - the net 30 terms?
+Lena Fischer: The net 30 payment terms are unchanged, just confirming they match our standard contract.
+Priya Nair: And the 3 business day dispute review window?
+Jose Ruiz: The 3 business day dispute review window is unchanged.
+Priya Nair: Great. By the way, how was the conference?
 Jose Ruiz: Really good, thanks. That's everything for today.
 Priya Nair: Thanks all.

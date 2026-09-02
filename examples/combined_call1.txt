@@ -1,31 +1,74 @@
-Priya Nair: Morning everyone. Let's scope the HomeFix booking platform. Start with how a customer books a job.
-Jose Ruiz: A customer picks a service category, describes the problem, and picks a time window. The booking is confirmed only once a provider accepts it.
-Priya Nair: How is a provider chosen?
-Jose Ruiz: The system auto-assigns the nearest available provider who has a rating of at least four stars. If no provider accepts within 60 minutes, the job goes to a manual dispatch queue.
-Priya Nair: Good. What does the customer see while they wait?
-Jose Ruiz: A live status screen showing the assigned provider's name, photo, and estimated arrival time, once the job is accepted.
-Priya Nair: Accessibility - anything specific there?
-Jose Ruiz: The booking screens must meet WCAG 2.1 AA, and the whole flow has to work in a mobile browser without a native app.
-Priya Nair: Provider onboarding?
-Jose Ruiz: A new provider signs up, uploads their trade qualifications, and is activated only after an admin approves them. Providers cannot approve themselves.
-Priya Nair: On notifications - what gets sent to the customer?
-Jose Ruiz: The customer gets an email when the booking is confirmed and another when the provider is on the way.
-Priya Nair: Anything else on notifications?
-Jose Ruiz: Yes, also send the customer an SMS when the provider is fifteen minutes away.
-Priya Nair: Let's talk money.
-Jose Ruiz: Customers pay by card or cash on completion, but an itemised invoice is emailed within 24 hours of the job closing.
-Priya Nair: Is there a minimum charge?
-Jose Ruiz: There is a 45 dollar call-out fee, and it applies even if the customer cancels after the provider has already been dispatched.
-Priya Nair: Cancellations in general?
-Jose Ruiz: A customer can cancel free of charge up to two hours before the window starts. Within two hours, the call-out fee is charged. Three cancellations in a rolling 30 days and the account is flagged for review.
-Priya Nair: Ratings?
-Jose Ruiz: After the job the customer rates the provider from one to five stars and can leave an optional written review. The provider's average rating is shown publicly on their profile.
-Priya Nair: Is there a quick way to re-book the same provider?
-Jose Ruiz: There is a re-book button that repeats a customer's last job in one tap.
-Priya Nair: What about refunds if the customer is unhappy with the work?
-Jose Ruiz: We haven't decided the refund window yet - that one is still open.
-Priya Nair: Okay, flag it. And honestly, the whole booking flow should just feel effortless.
-Jose Ruiz: Noted. One more - we're still checking whether weekend slots are allowed at launch.
-Priya Nair: Fine. Separately, can we push next week's review to Thursday?
-Jose Ruiz: Thursday works for me. I'll send an updated invite.
-Priya Nair: Thanks all, talk then.
+Priya Nair: Morning everyone, thanks for making the time. This is the big scoping workshop for HomeFix. I've got Jose on product, Dana on ops, Sam from L&D, Lena from finance, and Kofi from engineering.
+Kofi Mensah: Hi all, looking forward to it.
+Priya Nair: Before we start, how did the investor update go, Jose?
+Jose Ruiz: It went well, they're happy, so we're clear to build properly now.
+Priya Nair: Good to hear. Let's start with booking. How does a customer actually book a job?
+Jose Ruiz: A customer picks a service category, describes the problem, and picks a time window. The booking isn't confirmed until a provider accepts it.
+Priya Nair: So nothing is committed until a provider says yes. Is there a faster path for someone who's booked before?
+Jose Ruiz: Yes, there's a re-book button that repeats the customer's last job in one tap.
+Kofi Mensah: How is the provider chosen once a booking comes in?
+Jose Ruiz: The system auto-assigns the nearest available provider who has a rating of at least four stars.
+Kofi Mensah: And if nobody nearby takes it?
+Jose Ruiz: If no provider accepts within 60 minutes, the job drops into a manual dispatch queue for the ops team.
+Priya Nair: Is that 60-minute window the same everywhere, or does it vary by region?
+Dana Okafor: Let's say the same everywhere for now. We can revisit per-region later if we need to.
+Priya Nair: Fine, note that as open. What does the customer see while they're waiting?
+Jose Ruiz: Once the job is accepted, a live status screen with the assigned provider's name, photo, and estimated arrival time.
+Kofi Mensah: Accessibility usually has legal implications, anything specific there?
+Jose Ruiz: The booking screens have to meet WCAG 2.1 AA, and the whole flow has to work in a mobile browser without a native app.
+Priya Nair: Sam, walk us through provider onboarding and training.
+Sam Whitfield: A new provider signs up, uploads their trade qualifications, and is only activated after an admin approves them. They can't approve themselves.
+Sam Whitfield: Before their first job they also have to finish the onboarding course. It's four modules, safety, using the app, customer service, and payments.
+Kofi Mensah: How does someone pass a module, and what happens if they keep failing?
+Sam Whitfield: Each module ends with a short quiz, and you need at least 80 percent to pass it. After three failed attempts on the same module quiz, the provider is locked out of that quiz for 24 hours.
+Sam Whitfield: The 24-hour lockout came from our safety team, they didn't want people guessing their way through.
+Priya Nair: Understood, and once they've passed everything?
+Sam Whitfield: They get a certificate that's valid for 12 months, and they have to re-certify before it expires or their account goes inactive. An instructor can see everyone's module progress and quiz scores in a dashboard.
+Kofi Mensah: Is the advanced electrical module something every provider does?
+Sam Whitfield: That's the open question, honestly. We haven't decided whether the advanced electrical module is mandatory for all providers or opt-in.
+Priya Nair: Note it as open. Moving to notifications. What does the customer get told?
+Jose Ruiz: An email when the booking is confirmed, and another when the provider is on the way.
+Priya Nair: Just email?
+Jose Ruiz: Also an SMS when the provider is fifteen minutes away. And a reminder email if the customer hasn't confirmed the booking within 2 hours.
+Dana Okafor: All system emails go out from support@homefix.example with the display name HomeFix Support.
+Priya Nair: On payments, how does the customer pay?
+Jose Ruiz: They pay by card or cash on completion, but an itemised invoice is emailed within 24 hours of the job closing.
+Priya Nair: Is there any charge if there's no work done?
+Jose Ruiz: There's a 45 dollar call-out fee, and here's the catch, it still applies if the customer cancels after the provider's already been dispatched.
+Priya Nair: Good to flag. What are we promising on response times?
+Jose Ruiz: It depends on the customer's plan. Basic is 48 hours, Pro is 8 hours, and Enterprise is 1 hour.
+Dana Okafor: And if a first response misses the plan's target, the customer is automatically credited 10 percent of the job value and my team gets alerted.
+Priya Nair: Cancellations, quickly.
+Jose Ruiz: A customer can cancel free up to two hours before the window starts. Inside two hours, the call-out fee is charged. Three cancellations in a rolling 30 days and the account is flagged for review.
+Priya Nair: And ratings?
+Jose Ruiz: After the job the customer rates the provider one to five stars with an optional written review, the average shows publicly on the provider's profile, and a provider whose average drops below three point five stars over twenty jobs goes on a review hold and can't take new work.
+Kofi Mensah: Do providers upload photos of the finished work?
+Jose Ruiz: A provider can attach up to 5 photos to a completed job.
+Priya Nair: Lena, the billing side for partners.
+Lena Fischer: Partners are invoiced monthly, on the first business day of the month, for the prior month's completed jobs. Terms are net 30 from the invoice date.
+Kofi Mensah: Any manual step in that?
+Lena Fischer: If a partner's spend in a month is over 10,000 dollars, the invoice goes through a finance review before it's sent. Every line item links back to the job record and its photos.
+Priya Nair: What if a partner disputes something?
+Lena Fischer: They can dispute an invoice line within 15 days of the invoice date, and we respond within 5 business days. Everything is billed in US dollars whatever country the partner is in.
+Lena Fischer: One more, a partner with two consecutive late payments gets moved to prepay for the next three months.
+Priya Nair: Do we offer volume discounts to the big partners?
+Lena Fischer: Still open. Finance is modelling it, no decision yet.
+Priya Nair: Dana, ops and the platform layer.
+Dana Okafor: Providers are paid weekly, every Friday, for jobs completed the prior week. If a customer disputes a charge, an admin reviews it and decides within 3 business days.
+Dana Okafor: An admin can suspend a provider account immediately for a safety complaint, before any review. My team gets a weekly report of jobs completed, cancellations, and average provider rating.
+Kofi Mensah: Data handling and platform integration?
+Jose Ruiz: Job records are kept for 7 years and then anonymised, and every admin action is written to an immutable audit log. Partners can subscribe to job-status webhooks and get an event on every status change.
+Jose Ruiz: Partner API calls are capped at 600 requests per minute per partner, and past that they get a 429.
+Dana Okafor: An admin can export the weekly report as CSV, and the export leaves out any customer personal data. Calls between customer and provider go through a masked number so real numbers are never shown.
+Priya Nair: A few things we know are unresolved. Refunds if a customer's unhappy with the work?
+Jose Ruiz: We haven't decided the refund window yet, that's still open.
+Priya Nair: Languages at launch?
+Jose Ruiz: Spanish isn't decided for launch. Keep it in mind, we might add it later.
+Priya Nair: Weekend availability?
+Jose Ruiz: We're still checking whether weekend slots are allowed at launch.
+Priya Nair: Understood. Honestly, the whole booking flow should just feel effortless, and the ops dashboard should feel calm, not busy.
+Dana Okafor: Noted as principles.
+Aisha Kapoor: This is going well. Did the new coffee machine ever turn up at the office?
+Priya Nair: It did, and I've had three cups already. Anyway, one bit of logistics, can we push next week's review to Thursday?
+Jose Ruiz: Thursday works. I'll send an updated invite.
+Priya Nair: Great, thanks everyone.

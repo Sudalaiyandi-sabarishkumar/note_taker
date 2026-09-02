@@ -389,10 +389,14 @@ def _scan_open_questions(transcript_text, already):
 
 
 # Strong clause boundaries that separate two independent requirements inside
-# one sentence: a semicolon, or a contrastive conjunction. NOT a bare "and"
-# (would shatter "title, description, and priority").
+# one sentence: a semicolon, a contrastive conjunction, or a COMMA + "and"
+# (", and both documents are re-checked ..."). A bare " and " is NOT a split
+# point -- it would shatter "title, description, and priority". The
+# _looks_like_requirement guard (>=5 words + a verb, on each half) stops a
+# list item like ", and picks a time window" from splitting anyway.
 _CLAUSE_SPLIT_RE = re.compile(
-    r"(?:\s*;\s*|,?\s+but\s+|\.?\s+however,?\s+|,?\s+whereas\s+)", re.IGNORECASE)
+    r"(?:\s*;\s*|,\s+but\s+|\s+but\s+|\.?\s+however,?\s+|,?\s+whereas\s+"
+    r"|,\s+and\s+)", re.IGNORECASE)
 
 
 def _bundle_parts(q: str):
@@ -1215,9 +1219,45 @@ TWO gaps -- the most important. If the requirements are complete, output NONE.""
                               r"[^.?!]{0,10}\b(?:one|two|three|four|five|ten|\d+)\b"
                               r"|\bup to \d+|\bbetween \w+ and \w+", cited_text, re.I)):
             continue
+        # Boilerplate / vague: no concrete thing being asked about.
+        if _VAGUE_GAP_RE.search(q):
+            continue
+        # Must name at least one specific thing of its own (a content word
+        # that isn't already in the cited fact) -- otherwise it is just
+        # "what are the details" dressed up.
+        if not (qw - cited):
+            continue
         if q.lower() not in {o["question"].lower() for o in out}:
             out.append({"question": q, "refs": refs})
     return out[:2]
+
+
+_VAGUE_GAP_RE = re.compile(
+    r"\b(failure conditions?|edge cases?|error handling|corner cases?|"
+    r"how (?:is|are|will) (?:this|it|these|that) (?:be )?handled|"
+    r"what are the (?:requirements|rules|details|specifics|conditions|"
+    r"expectations|constraints|parameters)|any (?:other|additional|further)|"
+    r"anything else|further (?:details|clarification)|more (?:detail|information)|"
+    r"what (?:else|other things)|is there anything)\b", re.IGNORECASE)
+
+
+def resolves_question(question, fact_quote, model=None):
+    """Yes/No: does ``fact_quote`` decide/answer ``question``? Used only as a
+    tie-breaker on lexical near-misses in resolve_open_questions."""
+    try:
+        raw = strip_think(chat(
+            [{"role": "system", "content":
+              "You judge whether a stated requirement ANSWERS an open "
+              "question -- i.e. the thing the question asks about is now "
+              "decided by it. Reply with exactly YES or NO."},
+             {"role": "user", "content":
+              f'Open question: {question}\nStated requirement: "{fact_quote}"\n\n'
+              "Does the requirement decide the open question? YES or NO."}],
+            model=model or DEFAULT_MODEL, show_progress=False,
+            num_predict=5, temperature=0))
+    except Exception:
+        return False
+    return raw.strip().upper().startswith("YES")
 
 
 # --------------------------------------------------------------------------

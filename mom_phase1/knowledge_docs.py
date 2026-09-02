@@ -334,7 +334,7 @@ def _rehome_orphan_questions(statements, existing, docs_dir):
 
 
 def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
-                     story_fn=None, canon_fn=None, gap_fn=None):
+                     story_fn=None, canon_fn=None, gap_fn=None, resolve_fn=None):
     """Write/update one doc per feature. Returns a list of per-feature
     summary strings for the CLI to print.
 
@@ -702,7 +702,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     # Cross-doc passes over the whole knowledge base: close open questions a
     # later fact has answered, and flag facts in different docs that
     # contradict each other on a number.
-    for line in resolve_open_questions(docs_dir, today):
+    for line in resolve_open_questions(docs_dir, today, resolve_fn):
         summary.append(line)
     for line in flag_cross_doc_contradictions(docs_dir, today):
         summary.append(line)
@@ -727,9 +727,16 @@ _STOP_TOPIC = {
 }
 
 
+def _tstem(w):
+    for suf in ("ations", "ation", "ments", "ment", "ing", "ted", "ed", "ies",
+                "es", "s"):
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            return w[:-len(suf)] + ("y" if suf == "ies" else "")
+    return w
+
+
 def _topicw(text):
-    return {w[:-1] if len(w) > 4 and w.endswith("s") else w
-            for w in re.findall(r"[a-z0-9]{4,}", (text or "").lower())
+    return {_tstem(w) for w in re.findall(r"[a-z0-9]{4,}", (text or "").lower())
             if w not in _STOP_TOPIC}
 
 
@@ -746,13 +753,16 @@ def _all_active_facts(docs_dir):
     return out
 
 
-def resolve_open_questions(docs_dir=None, today=None):
-    """Mark an [OPEN QUESTION] / [GAP] as [RESOLVED] once an active fact --
-    in any doc -- clearly answers it (>= 2 shared distinctive topic words).
-    Rewrites only the docs that changed. Returns human-readable lines."""
+def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
+    """Mark an [OPEN QUESTION] as [RESOLVED] once an active fact -- in any doc
+    -- answers it: deterministically on >= 3 shared distinctive topic words
+    (or >= 2 + matching numbers), or, for a near-miss (>= 2 shared words),
+    via ``resolve_fn(question, fact_quote) -> bool`` if supplied. The LLM
+    path is hard-capped per run so a big knowledge base can't fan it out."""
     docs_dir = docs_dir or DOCS_DIR
     today = today or date.today().isoformat()
     pool = _all_active_facts(docs_dir)
+    llm_budget = [6] if resolve_fn else [0]
     results = []
     for name, path in discover_features(docs_dir).items():
         try:
@@ -771,20 +781,34 @@ def resolve_open_questions(docs_dir=None, today=None):
             block = m.group(1)
             first = block.splitlines()[0]
             qtext = first.split("]:", 1)[1] if "]:" in first else first
+            qtext = qtext.split(" — raised by", 1)[0].strip()
+            qtext = re.sub(r"^(?:Decision needed|Turn into a concrete[^:]*):\s*",
+                           "", qtext).strip()
             qw = _topicw(qtext)
             if len(qw) < 2:
                 return block
             qnums = _numish(qtext)
+            near = None
             for fname, _fp, fact in pool:
                 fbody = fact["summary"] + " " + fact["quote"]
                 fw = _topicw(fbody)
                 shared = len(qw & fw)
-                answers = shared >= 3 or (shared >= 2 and qnums <= _numish(fbody))
-                if answers:
+                if shared >= 3 or (shared >= 2 and qnums <= _numish(fbody)):
                     changed = True
                     nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
                     return (nb + f'\n  - resolved by {fname} EF-{fact["id"]} '
                             f'({today}): *"{fact["quote"]}"*\n')
+                if near is None and shared >= 2:
+                    near = (fname, fact)
+            # No deterministic match. If there's a near-miss candidate, ask
+            # the model once (budget permitting) whether it actually answers.
+            if near and llm_budget[0] > 0:
+                llm_budget[0] -= 1
+                if resolve_fn(qtext.strip(), near[1]["quote"]):
+                    changed = True
+                    nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
+                    return (nb + f'\n  - resolved by {near[0]} EF-{near[1]["id"]} '
+                            f'({today}): *"{near[1]["quote"]}"*\n')
             return block
 
         new_oq = _Q_BLOCK_RE.sub(_resolve, oq)
