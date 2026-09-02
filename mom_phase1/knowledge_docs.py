@@ -334,7 +334,7 @@ def _rehome_orphan_questions(statements, existing, docs_dir):
 
 
 def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
-                     story_fn=None, canon_fn=None):
+                     story_fn=None, canon_fn=None, gap_fn=None):
     """Write/update one doc per feature. Returns a list of per-feature
     summary strings for the CLI to print.
 
@@ -423,8 +423,14 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                     f'  - *"{s["quote"]}"*'
                 )
                 nq_oq = _norm_q(s["quote"])
-                if (s["quote"] not in prior_q and nq_oq not in prior_q_norm
-                        and nq_oq not in seen_oq):
+                # near-duplicate: one quote contained in another already filed
+                # (e.g. "X still undecided" vs "X still undecided. Finance is
+                # discussing it.") -- keep only the first.
+                dup = (s["quote"] in prior_q or nq_oq in prior_q_norm
+                       or any((nq_oq in seen or seen in nq_oq)
+                              and min(len(nq_oq), len(seen)) >= 20
+                              for seen in seen_oq))
+                if not dup:
                     seen_oq.add(nq_oq)
                     new_questions.append(block)
                     n_open += 1
@@ -584,6 +590,26 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 )
                 n_review += 1
 
+        active_now = _active(all_facts)
+
+        # Gap analysis: name decisions the confirmed facts leave unmade.
+        # Only when this run actually changed the fact set, and only gaps not
+        # already recorded, so re-processing a call does not pile them up.
+        if gap_fn and (n_new or n_change):
+            prior_q_lc = _norm_q(prior_q)
+            existing_q = "\n".join(new_questions).lower()
+            for g in gap_fn(feature, active_now):
+                nq = _norm_q(g["question"])
+                if nq in prior_q_lc or nq in existing_q:
+                    continue
+                refs = ", ".join(f"EF-{r}" for r in g["refs"])
+                gid = f"G-{today}-{_slug(feature)}-{len(new_questions) + 1}"
+                new_questions.append(
+                    f'- **{gid}** [GAP]: {g["question"]} — not yet decided; '
+                    f'follows from {refs}. (raised by gap analysis, '
+                    f'{source_name} {today})')
+                n_open += 1
+
         run_line = (
             f"- {today}: processed {source_name} — {n_new} new, {n_change} "
             f"changed, {n_dup} restated, {n_review} to review, "
@@ -591,7 +617,6 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         )
         changelog_entry = "\n".join([run_line, *extra_log])
 
-        active_now = _active(all_facts)
         if story_fn:
             user_story = story_fn(feature, active_now)
         else:

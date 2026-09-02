@@ -294,19 +294,48 @@ def _is_aspiration(quote: str) -> bool:
 # Logistics / scheduling chatter about the PROJECT, not the product being built.
 _LOGISTICS_RE = re.compile(
     r"\b(reschedul\w*|re-?schedule"
-    r"|(?:move|push|shift|bump)\b[^.?!]{0,30}\b(?:session|meeting|call|sync|invite|slot)\b"
-    r"|send\b[^.?!]{0,25}\binvite\b|calendar (?:hold|invite)|same time next week"
+    r"|(?:move|push|shift|bump|change)\b[^.?!]{0,40}\b(?:session|meeting|call|sync|invite|slot|review|standup|stand-up|check-?in|checkpoint|catch-?up)\b"
+    r"|(?:move|push|shift|bump|reschedul\w*)\b[^.?!]{0,40}\bto\b[^.?!]{0,20}\b(?:next week|monday|tuesday|wednesday|thursday|friday|\d{1,2}\s*(?:am|pm)|\d{1,2}[:.]\d{2})"
+    r"|send\b[^.?!]{0,25}\b(?:an? )?invite\b|calendar (?:hold|invite)|same time next week"
     r"|(?:talk|see you|meet|catch up)\b[^.?!]{0,15}\b(?:next week|thursday|monday|tuesday|wednesday|friday|then|soon)\b"
     r"|review (?:the )?(?:mockups?|designs?|deck) (?:next|later)"
     r"|mockups?\b[^.?!]{0,20}\b(?:running )?(?:a day )?late"
     r"|pick (?:this |it )?up next (?:week|time)|regroup next week|circle back next"
-    r"|i'?ll (?:send|share)\b[^.?!]{0,20}\b(?:invite|calendar|note)s?)\b",
+    r"|i'?ll (?:re-?)?(?:send|share|resend)\b[^.?!]{0,20}\b(?:invite|calendar|note)s?)\b",
     re.IGNORECASE,
 )
 
 
 def _is_logistics(quote: str) -> bool:
     return bool(_LOGISTICS_RE.search(quote or ""))
+
+
+# The speaker is describing something NOT yet decided -- record it as an open
+# question, never as an Established Fact. Runs on an extracted statement's
+# summary+quote (the model often files these as ## STATEMENT).
+_UNDECIDED_RE = re.compile(
+    r"\b("
+    r"(?:haven'?t|have not|hasn'?t|has not|not|never|yet to be|still to be)\s+"
+    r"(?:yet\s+|been\s+)*(?:decided|settled|agreed|determined|finali[sz]ed|confirmed|chosen|nailed down)"
+    r"|no (?:final )?decision|(?:still|currently) (?:open|undecided|tbd|under discussion|being discussed|in discussion|up in the air)"
+    r"|to be (?:decided|determined|confirmed)|\btbd\b|undetermined|open question|open item"
+    r"|still (?:checking|deciding|discussing|arguing|debating|working (?:it|this) out|figuring (?:it|this) out|to be worked out)"
+    r"|(?:we|they|finance|legal|the team|it)(?:'re| are| is|'s)? still (?:being |under )?(?:checked|discussed|decided|reviewed)"
+    r"|we (?:might|may) (?:want to|do|add|build|introduce|consider|offer)\b[^.?!]{0,60}\b(?:but|,)?[^.?!]{0,30}\bnot decided\b"
+    r"|not (?:yet )?decided|don'?t build (?:it|this|that) yet|not for (?:now|launch|v1|the mvp|version one)"
+    r"|keep (?:it|this|that) in mind (?:for now)?|park(?:ed|ing)? (?:it|this)(?: for now)?"
+    r"|revisit\b[^.?!]{0,30}\blater|defer(?:red)?\b[^.?!]{0,15}\b(?:to|until)|placeholder for now"
+    r"|remains? (?:undecided|undetermined|open|an open question)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_undecided(text: str) -> bool:
+    t = text or ""
+    # "we decided X" / "that resolves it" are NOT undecided -- a bare negation
+    # must be present for the "...decided" arm.
+    return bool(_UNDECIDED_RE.search(t))
 
 
 # A speaker flagging that the topic is unsettled -- an open question, not a
@@ -341,6 +370,8 @@ def _scan_open_questions(transcript_text, already):
                                                         "Unidentified speaker", line)
         if _normalise(text) in already or len(text.split()) < 4:
             continue
+        if _is_logistics(text) or _is_banter(text) or _is_reply_echo(text):
+            continue  # scheduling / small talk, even when phrased as a hedge
         out.append({"kind": "question", "feature": "", "summary": text.rstrip("."),
                     "quote": text, "speaker": spk, "timestamp": ts,
                     "verified": True, "match_score": 1.0})
@@ -348,28 +379,44 @@ def _scan_open_questions(transcript_text, already):
     return out
 
 
+# Strong clause boundaries that separate two independent requirements inside
+# one sentence: a semicolon, or a contrastive conjunction. NOT a bare "and"
+# (would shatter "title, description, and priority").
+_CLAUSE_SPLIT_RE = re.compile(
+    r"(?:\s*;\s*|,?\s+but\s+|\.?\s+however,?\s+|,?\s+whereas\s+)", re.IGNORECASE)
+
+
+def _bundle_parts(q: str):
+    parts = []
+    for sent in _SENT_END_RE.split(q):
+        for clause in _CLAUSE_SPLIT_RE.split(sent):
+            c = clause.strip().strip(" ,;")
+            if c:
+                parts.append(c)
+    return parts
+
+
 def _unbundle(statement: dict, norm_transcript: str):
-    """If the Quote already verifies as one contiguous span, return the
-    statement unchanged. Otherwise, if it is 2+ sentences and each on its own
-    verifies against the transcript, split it: one statement per sentence,
-    the sentence text becoming its own Summary (the quote stays ground
-    truth). Sentences that don't verify are dropped here and the leftover is
-    handled by the normal verify/snap path."""
+    """Split a Quote that packs two independent requirements -- multiple
+    sentences, or clauses joined by ';' / 'but' / 'however' -- into one
+    statement each, provided every part still verifies verbatim against the
+    transcript and reads like a requirement on its own. Otherwise the
+    statement is returned unchanged and the normal verify/snap path handles
+    it. Runs even when the whole Quote verifies as one span (a valid
+    compound sentence still hides a second requirement)."""
     q = statement["quote"]
-    if _normalise(q) in norm_transcript:
-        return [statement]
-    parts = [p.strip() for p in _SENT_END_RE.split(q) if p.strip()]
+    parts = _bundle_parts(q)
     if len(parts) < 2:
         return [statement]
     verified_parts = [p for p in parts
                       if _normalise(p) in norm_transcript and _looks_like_requirement(p)]
     if len(verified_parts) < 2:
-        return [statement]  # not a clean multi-quote bundle; let snap try
+        return [statement]  # not a clean multi-requirement bundle; let snap try
     out = []
     for p in verified_parts:
         piece = dict(statement)
         piece["quote"] = p
-        piece["summary"] = p.rstrip(".!?") + "."
+        piece["summary"] = (p[0].upper() + p[1:]).rstrip(".!?") + "."
         out.append(piece)
     return out
 
@@ -469,7 +516,18 @@ def extract_statements(transcript_text: str, known_features, model=None,
                 or _is_logistics(s["quote"])):
             continue  # reaction, acknowledgement, or project-scheduling chatter
         # An open question is one item -- verify its quote but never unbundle
-        # or reconcile it.
+        # or reconcile it. An aspiration or an "undecided" statement is really
+        # a question too, so mark it now and skip unbundling (splitting "we
+        # haven't decided X. Y is still discussing it." into two questions is
+        # noise).
+        if s.get("kind") != "question":
+            if _is_aspiration(s["quote"]):
+                s = dict(s, kind="question", summary=(
+                    "Turn into a concrete, testable requirement: "
+                    + s["summary"].rstrip(".")))
+            elif _is_undecided(s["summary"] + " " + s["quote"]):
+                s = dict(s, kind="question", summary=(
+                    "Decision needed: " + s["summary"].rstrip(".")))
         pieces = [s] if s.get("kind") == "question" else _unbundle(s, norm_transcript)
         for piece in pieces:
             snapped, verified, score = _snap_quote(
@@ -505,6 +563,14 @@ def extract_statements(transcript_text: str, known_features, model=None,
             if piece["kind"] == "fact" and _is_aspiration(piece["quote"]):
                 piece["kind"] = "question"
                 piece["summary"] = ("Turn into a concrete, testable requirement: "
+                                    + piece["summary"].rstrip("."))
+            # A statement about something NOT yet decided ("we haven't decided
+            # the refund window", "might do a discount, not decided") is an
+            # open question, not a fact -- whatever block the model used.
+            elif piece["kind"] == "fact" and _is_undecided(
+                    piece["summary"] + " " + piece["quote"]):
+                piece["kind"] = "question"
+                piece["summary"] = ("Decision needed: "
                                     + piece["summary"].rstrip("."))
             kept.append(piece)
 
@@ -1055,6 +1121,80 @@ A list this size usually has 3-6 merges. If truly none, output: NONE"""
             _f.write("=== MERGE PROPOSAL ===\n" + strip_think(raw)
                      + "\nparsed: " + repr(groups) + "\n\n")
     return groups
+
+
+# --------------------------------------------------------------------------
+# gap analysis: what a set of facts leaves UNSPECIFIED
+# --------------------------------------------------------------------------
+_GAP_SYSTEM = (
+    "You are a senior business analyst pressure-testing a feature's "
+    "requirements before build. Real requirements ALWAYS have gaps -- an "
+    "unstated limit, an undefined failure path, an unnamed owner, an "
+    "uncovered edge case. Your job is to surface the 2-3 most important "
+    "questions the client still has to answer. Every question must be "
+    "concrete (answerable with a specific rule or value) and must follow "
+    "from a listed requirement -- never restate one, never invent a feature."
+)
+_GAP_LINE_RE = re.compile(
+    r"^\s*(?:[-*]\s*)?GAP:\s*(.+?)\s*(?:\[(?:from\s*)?((?:EF-\d+[,\s]*)+)\])\s*$",
+    re.IGNORECASE | re.MULTILINE)
+
+
+def analyze_gaps(feature, active_facts, model=None):
+    """Up to 3 specific unanswered questions implied by ``active_facts`` --
+    each tied to the EF number(s) it follows from. Returns a list of
+    ``{"question": str, "refs": [int, ...]}``. Off when MOM_GAPS=0, or when
+    there is too little to reason about."""
+    if os.environ.get("MOM_GAPS", "1") == "0" or len(active_facts) < 2:
+        return []
+    numbered = "\n".join(f'EF-{f["id"]}: {f["summary"]}' for f in active_facts)
+    prompt = f"""Feature: {feature}
+
+Confirmed requirements:
+{numbered}
+
+Find the 2-3 most important decisions these requirements DO NOT yet answer.
+Look for: a number/limit not given, what happens on failure or error, an
+edge case (empty / duplicate / concurrent / expired), who is allowed to do
+it, how it can be undone, what happens at a boundary.
+
+Worked example --
+requirement: "A customer gets an email when the booking is confirmed."
+GAP: What happens if the confirmation email fails to deliver? [from EF-1]
+GAP: Can the customer opt out of confirmation emails? [from EF-1]
+
+Now do the same for the requirements above. One per line, EXACTLY this form:
+GAP: <a concrete question> [from EF-<n>]
+
+Give at least one gap unless the feature is genuinely trivial; only then
+output NONE."""
+    try:
+        raw = strip_think(chat(
+            [{"role": "system", "content": _GAP_SYSTEM},
+             {"role": "user", "content": prompt}],
+            model=model or DEFAULT_MODEL, show_progress=False,
+            num_predict=400, temperature=0))
+    except Exception:
+        return []
+    if raw.strip().upper().startswith("NONE"):
+        return []
+    valid = {f["id"] for f in active_facts}
+    fact_words = _content_words(" ".join(f["summary"] for f in active_facts))
+    out = []
+    for m in _GAP_LINE_RE.finditer(raw):
+        q = m.group(1).strip().rstrip(".") + "?"
+        q = re.sub(r"\?+$", "?", q)
+        refs = [int(x) for x in re.findall(r"EF-(\d+)", m.group(2))
+                if int(x) in valid]
+        if not refs:
+            continue
+        # Guard: a "gap" that shares no vocabulary with any fact is usually
+        # the model going off-piste -- drop it.
+        if not (_content_words(q) & fact_words):
+            continue
+        if q.lower() not in {o["question"].lower() for o in out}:
+            out.append({"question": q, "refs": refs})
+    return out[:3]
 
 
 # --------------------------------------------------------------------------

@@ -28,7 +28,7 @@ import re
 import sys
 
 from . import __version__
-from .extract import (answer_question, canonicalize_statements,
+from .extract import (analyze_gaps, answer_question, canonicalize_statements,
                       extract_statements, propose_doc_merges,
                       reconcile_statement, synthesize_user_story)
 from .knowledge_docs import (DOCS_DIR, apply_merges, describe_features,
@@ -95,7 +95,8 @@ def run_phase1(path: str) -> None:
         summary = merge_statements(statements, source_name,
                                    reconcile=reconcile_statement,
                                    story_fn=synthesize_user_story,
-                                   canon_fn=canonicalize_statements)
+                                   canon_fn=canonicalize_statements,
+                                   gap_fn=analyze_gaps)
 
         print("Checking for fragmented feature areas...")
         # The 7B is not reliable enough to auto-merge docs (on a large
