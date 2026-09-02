@@ -1312,11 +1312,47 @@ no invented detail. Output only the story."""
             story = re.sub(r"^\s*as an?\s+[a-z][a-z ]{1,20}?([,\s])",
                            r"As a user\1", story, count=1, flags=re.IGNORECASE)
 
-    # Structural guard: reject a story that pulls in content words present in
-    # none of the facts (caught an invented "email, SMS, WhatsApp" once).
-    grounded = set()
-    for f in active_facts:
-        grounded |= _content_words(f["summary"]) | _content_words(f["quote"])
-    grounded |= _content_words(feature)
-    novel = _content_words(story) - grounded
-    return fallback if len(novel) >= 4 else story
+    # Grounding guard. A user story is *meant* to reword the facts, so a
+    # blunt "any word not in the facts" check punished good writing. The two
+    # signals that actually mean fabrication:
+    #   * a NUMBER no fact states  (an invented limit / threshold / SLA), or
+    #   * a novel PROPER NOUN / ACRONYM  (an invented channel, integration, or
+    #     system -- this is what "email, SMS, WhatsApp" looked like).
+    # Lowercase rewording ("issue" for "ticket", "handled" for "processed")
+    # is allowed.
+    fact_lc = fact_text
+    if _numbers_in(story) - _numbers_in(fact_lc):
+        return fallback
+
+    grounded = set(_WORD_RE.findall(fact_lc)) | _content_words(feature)
+    toks = re.findall(r"\S+", story)
+    for i, tok in enumerate(toks):
+        core = re.sub(r"[^A-Za-z]", "", tok)
+        if len(core) < 3:
+            continue
+        sentence_start = i == 0 or toks[i - 1][-1:] in ".!?:;"
+        is_propery = core.isupper() or (core[0].isupper() and not sentence_start)
+        if is_propery and core.lower() not in grounded and core.lower() not in _STORY_GLUE:
+            return fallback
+    return story
+
+
+_STORY_GLUE = {
+    "within", "appropriate", "relevant", "various", "certain", "particular",
+    "additional", "additionally", "whether", "based", "according", "able",
+    "using", "via", "regarding", "related", "necessary", "required",
+    "available", "applicable", "specific", "same", "such", "both", "either",
+    "each", "every", "their", "there", "when", "once", "after", "before",
+    "while", "always", "never", "also", "then", "however", "instead",
+    "system", "product", "platform", "tool", "feature", "user", "users",
+    "the", "and", "for",
+}
+
+_NUM_TOKEN_RE = re.compile(r"\b\d+(?:[.,]\d+)?\b")
+
+
+def _numbers_in(text):
+    text = (text or "").lower()
+    nums = {t.replace(",", "") for t in _NUM_TOKEN_RE.findall(text)}
+    nums |= {w for w in _WORD_RE.findall(text) if w in _NUMBER_WORDS}
+    return nums
