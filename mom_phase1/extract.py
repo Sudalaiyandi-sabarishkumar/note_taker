@@ -1226,6 +1226,29 @@ def fix_summary(summary: str, quote: str) -> str:
     return summary
 
 
+def _join_fact_summaries(active_facts, cap=8):
+    """Every current requirement as one plain sentence -- the deterministic
+    fallback when a synthesised story can't be trusted. Each clause is a
+    (de-stubbed) fact summary; nothing is added."""
+    clauses = []
+    for f in active_facts[:cap]:
+        c = _destub(f["summary"].strip()).rstrip(" .;")
+        c = re.sub(r"\s*[;\n]\s*", ", ", c)   # no inner ';' -- it's our separator
+        if not c:
+            continue
+        first = c.split()[0]
+        if clauses and c[0].isupper() and not (len(first) > 1 and first.isupper()):
+            c = c[0].lower() + c[1:]          # mid-sentence clause, not an acronym
+        clauses.append(c)
+    if not clauses:
+        return "No confirmed requirements yet."
+    text = "; ".join(clauses)
+    extra = len(active_facts) - len(clauses)
+    if extra > 0:
+        text += f"; plus {extra} more (see Established Facts)"
+    return text + "."
+
+
 def synthesize_user_story(feature, active_facts, model=None):
     """Return ONE user story ("As a <role>, I want <capability>[, so that
     <benefit>].") for the feature's CURRENT (non-superseded) facts.
@@ -1238,14 +1261,10 @@ def synthesize_user_story(feature, active_facts, model=None):
         return "No confirmed requirements yet."
 
     # Mechanical fallback -- used only if the model call fails or its output
-    # can't be trusted. Not forced into "As a ... I want ..." shape (some
-    # fact summaries are declarative and don't fit it); just the newest
-    # requirement stated plainly, with a pointer to the rest.
-    newest = _destub(active_facts[-1]["summary"].strip()).rstrip(".") + "."
-    extra = len(active_facts) - 1
-    fallback = newest + (
-        f" (Plus {extra} more requirement{'s' if extra > 1 else ''} below.)"
-        if extra else "")
+    # can't be trusted. Not forced into "As a ... I want ..." shape (the fact
+    # summaries are declarative); every current requirement, joined plainly.
+    # 100% grounded: it IS the fact summaries.
+    fallback = _join_fact_summaries(active_facts)
 
     facts_block = "\n".join(f'- {f["summary"]} (exact words: "{f["quote"]}")'
                             for f in active_facts)
