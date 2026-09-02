@@ -1069,7 +1069,14 @@ _ASK_SYSTEM = (
     "source call/date, and quote the client where relevant. To say what was "
     "used BEFORE a change, look at the superseded fact and the Change Log's "
     "'was:' line. If the docs do not contain the answer, say exactly: "
-    "\"The docs don't record that.\" Never guess or add outside knowledge."
+    "\"The docs don't record that.\" Never guess or add outside knowledge.\n"
+    "Established Facts is the authoritative record. The 'User Story' line is "
+    "only a short, lossy summary -- never treat it as the full picture and "
+    "never just echo it. When asked for the full / complete / overall "
+    "requirements or story, account for EVERY Established Fact that is not "
+    "marked superseded -- list each one you used, and do not drop a fact "
+    "just because it is a constraint or a system behaviour rather than a "
+    "user-facing capability."
 )
 
 
@@ -1290,51 +1297,102 @@ no invented detail. Output only the story."""
         )
     except Exception:
         return fallback
-    story = strip_think(raw).strip().strip('"').strip()
-    for lead in ("Sure,", "Here is", "Here's", "User story:", "Story:"):
-        if story.lower().startswith(lead.lower()):
-            story = story.split(":", 1)[-1].strip()
-            break
-    if not story or not story.lower().lstrip("*_ ").startswith("as a"):
-        return fallback
-    # "..., I want to implement the X ..." -> "..., I want the X ..." -- a
-    # build/dev verb after "I want" makes the story read like a ticket.
-    story = _STUB_WANT_RE.sub(r"\1", story, count=1)
+    story = _clean_story_text(strip_think(raw))
+    if story.lower().lstrip("*_ ").startswith("as a"):
+        story = _STUB_WANT_RE.sub(r"\1", story, count=1)  # "I want to implement X" -> "I want X"
+        story = _constrain_role(story, active_facts)
+        if story and not _story_problem(story, active_facts, feature):
+            return story
 
-    # Constrain the <role>: it must be a word that actually appears in this
-    # doc's facts (stops a stale "learner" leaking from another domain).
-    fact_text = " ".join(f["summary"] + " " + f["quote"] for f in active_facts).lower()
+    # The one-sentence story failed (bad shape, invented a detail, or left
+    # whole facts out). Try once more for a short prose summary that must
+    # cover EVERY fact, then re-check it. Still fall back to the plain join.
+    try:
+        raw2 = chat(
+            [{"role": "system", "content": _STORY_SYSTEM},
+             {"role": "user", "content":
+                 f"Feature: {feature}\n\nThese are ALL the confirmed "
+                 f"requirements, every one still true:\n{facts_block}\n\n"
+                 "Write 2-4 plain declarative sentences that cover EVERY "
+                 "requirement above -- omit none. No \"As a...\" framing. Add "
+                 "no number, name, channel, or capability that is not stated. "
+                 "Output only the summary."}],
+            model=model or DEFAULT_MODEL, show_progress=False,
+            num_predict=350, temperature=0,
+        )
+        story2 = _clean_story_text(strip_think(raw2))
+        if story2 and not _story_problem(story2, active_facts, feature):
+            return story2
+    except Exception:
+        pass
+    return fallback
+
+
+def _clean_story_text(raw):
+    s = raw.strip().strip('"').strip()
+    for lead in ("Sure,", "Here is", "Here's", "User story:", "Story:",
+                 "Summary:"):
+        if s.lower().startswith(lead.lower()):
+            s = s.split(":", 1)[-1].strip() if ":" in s else s[len(lead):].strip()
+            break
+    return s
+
+
+def _constrain_role(story, active_facts):
+    """The <role> must be a word that appears in this doc's facts (stops a
+    stale 'learner' leaking in from another domain)."""
+    fact_text = " ".join(f["summary"] + " " + f["quote"]
+                         for f in active_facts).lower()
     m = re.match(r"\s*as an?\s+([a-z][a-z ]{1,20}?)[,\s]", story, re.IGNORECASE)
     if m:
-        role = m.group(1).strip().lower()
-        head = role.split()[-1].rstrip("s")
-        if head not in ("user",) and head and head not in fact_text:
+        head = m.group(1).strip().lower().split()[-1].rstrip("s")
+        if head and head != "user" and head not in fact_text:
             story = re.sub(r"^\s*as an?\s+[a-z][a-z ]{1,20}?([,\s])",
                            r"As a user\1", story, count=1, flags=re.IGNORECASE)
+    return story
 
-    # Grounding guard. A user story is *meant* to reword the facts, so a
-    # blunt "any word not in the facts" check punished good writing. The two
-    # signals that actually mean fabrication:
-    #   * a NUMBER no fact states  (an invented limit / threshold / SLA), or
-    #   * a novel PROPER NOUN / ACRONYM  (an invented channel, integration, or
-    #     system -- this is what "email, SMS, WhatsApp" looked like).
-    # Lowercase rewording ("issue" for "ticket", "handled" for "processed")
-    # is allowed.
-    fact_lc = fact_text
+
+def _story_problem(story, active_facts, feature):
+    """None if the story is usable; a short reason string if not.
+
+    Two failure modes:
+      * FABRICATION -- a number, or a proper noun / acronym, that no fact
+        states (this is what an invented "email, SMS, WhatsApp" looked like).
+        Lowercase rewording ("issue" for "ticket") is fine.
+      * INCOMPLETE -- it leaves 2+ whole facts unmentioned, so it misreads as
+        the full picture when it isn't.
+    """
+    fact_lc = " ".join(f["summary"] + " " + f["quote"]
+                       for f in active_facts).lower()
     if _numbers_in(story) - _numbers_in(fact_lc):
-        return fallback
-
+        return "invented number"
     grounded = set(_WORD_RE.findall(fact_lc)) | _content_words(feature)
     toks = re.findall(r"\S+", story)
     for i, tok in enumerate(toks):
         core = re.sub(r"[^A-Za-z]", "", tok)
         if len(core) < 3:
             continue
-        sentence_start = i == 0 or toks[i - 1][-1:] in ".!?:;"
-        is_propery = core.isupper() or (core[0].isupper() and not sentence_start)
-        if is_propery and core.lower() not in grounded and core.lower() not in _STORY_GLUE:
-            return fallback
-    return story
+        at_start = i == 0 or toks[i - 1][-1:] in ".!?:;"
+        propery = core.isupper() or (core[0].isupper() and not at_start)
+        if propery and core.lower() not in grounded and core.lower() not in _STORY_GLUE:
+            return f"invented proper noun: {core}"
+    # Coverage: a fact is "mentioned" only if the story shares one of its
+    # DISTINCTIVE words -- content words minus glue minus words common to
+    # half+ the facts ("email", "ticket"...), which would otherwise let one
+    # fact stand in for an unrelated one.
+    from collections import Counter
+    fact_words, df = [], Counter()
+    for f in active_facts:
+        w = _content_words(f["summary"]) - _STORY_GLUE
+        fact_words.append(w)
+        df.update(w)
+    ambient = ({k for k, c in df.items() if c * 2 > len(active_facts)}
+               if len(active_facts) > 2 else set())
+    sw = _content_words(story)
+    missed = sum(1 for w in fact_words if (w - ambient) and not (w - ambient) & sw)
+    if missed >= 2 or (missed and len(active_facts) <= 3):
+        return f"leaves {missed} fact(s) out"
+    return None
 
 
 _STORY_GLUE = {
