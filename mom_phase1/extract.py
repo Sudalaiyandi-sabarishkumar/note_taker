@@ -298,10 +298,13 @@ _LOGISTICS_RE = re.compile(
     r"|(?:move|push|shift|bump|reschedul\w*)\b[^.?!]{0,40}\bto\b[^.?!]{0,20}\b(?:next week|monday|tuesday|wednesday|thursday|friday|\d{1,2}\s*(?:am|pm)|\d{1,2}[:.]\d{2})"
     r"|send\b[^.?!]{0,25}\b(?:an? )?invite\b|calendar (?:hold|invite)|same time next week"
     r"|(?:talk|see you|meet|catch up)\b[^.?!]{0,15}\b(?:next week|thursday|monday|tuesday|wednesday|friday|then|soon)\b"
-    r"|review (?:the )?(?:mockups?|designs?|deck) (?:next|later)"
-    r"|mockups?\b[^.?!]{0,20}\b(?:running )?(?:a day )?late"
-    r"|pick (?:this |it )?up next (?:week|time)|regroup next week|circle back next"
-    r"|i'?ll (?:re-?)?(?:send|share|resend)\b[^.?!]{0,20}\b(?:invite|calendar|note)s?)\b",
+    r"|review (?:the |those |them |it |that )*(?:mockups?|wireframes?|designs?|prototypes?|deck|slides?)?\s*(?:next (?:time|week)|later|then)"
+    r"|we'?ll review (?:those|them|it|that)\b[^.?!]{0,25}\b(?:next|later|instead)"
+    r"|(?:mockups?|wireframes?|designs?|prototypes?|deck|slides?|artwork|copy)\b[^.?!]{0,25}\b(?:running |a day |a bit )*(?:late|behind|delayed|slipped|not ready)"
+    r"|pick (?:this |it |that )?up next (?:week|time)|regroup next week"
+    r"|(?:circle back|follow up|check back)\b[^.?!]{0,35}\bnext (?:week|time|call)"
+    r"|\b(?:i'?ll|will)\s+(?:re-?)?(?:send|share|resend|forward|circulate|email|drop|post)\b[^.?!]{0,35}\b(?:invite|calendar|notes?|outline|template|deck|link|spec|summary|minutes|recap|doc|document)s?\b"
+    r"|\b(?:i'?ll|will)\s+(?:share|send|circulate|follow up|come back|circle back)\b[^.?!]{0,40}\b(?:after|following|by|before) (?:this|the|end of|next) (?:call|meeting|session|day|week))\b",
     re.IGNORECASE,
 )
 
@@ -739,10 +742,14 @@ def _bad_area(name: str) -> bool:
     toks = _WORD_RE.findall((name or "").lower())
     if not toks:
         return True
-    if toks[0] in _AREA_BAD_LEAD:
+    if toks[0] in _AREA_BAD_LEAD or toks[0] in _NAME_STOP:
+        return True
+    # a name that is just <noun> <modal/verb-fragment> ("Category Shouldn",
+    # "Instructors Cannot") is not a usable title
+    if len(toks) == 2 and toks[1] in _NAME_STOP:
         return True
     return all(t in _STORY_STOPWORDS or t in _GENERIC_WORDS or t in _AREA_BAD_LEAD
-               or len(t) < 3 for t in toks)
+               or t in _NAME_STOP or len(t) < 3 for t in toks)
 
 
 def _clean_area(text):
@@ -770,15 +777,31 @@ _LEADING_VERBS = {
     "increase", "decrease", "reduce", "update", "require", "include", "have",
     "want", "need", "define", "specify", "confirm", "confirmed",
 }
+# Modal / auxiliary / participle fragments that must never sit in a feature
+# name ("Instructors Cannot", "Category Shouldn['t]", "Couriers Coming").
+_NAME_STOP = {
+    "cannot", "can", "cant", "could", "couldn", "would", "wouldn", "should",
+    "shouldn", "must", "shall", "will", "wont", "won", "may", "might",
+    "isn", "aren", "wasn", "weren", "doesn", "didn", "don", "dont", "hasn",
+    "haven", "hadn", "coming", "going", "being", "doing", "having", "getting",
+    "want", "wants", "wanted", "need", "needs", "needed", "like", "would",
+    "then", "than", "back", "also", "just", "still", "yet", "now", "here",
+    "there", "their", "them", "they", "this", "that", "these", "those",
+    "anymore", "instead", "into", "onto", "upon",
+    "always", "never", "often", "usually", "sometimes", "rarely", "really",
+    "very", "quite", "long", "short", "more", "less", "most", "least",
+}
 
 
 def _area_from_summary(summary, fallback):
     toks = _WORD_RE.findall(summary.lower())
-    while toks and toks[0] in (_LEADING_VERBS | _STORY_STOPWORDS | _AREA_BAD_LEAD):
+    _skip = _LEADING_VERBS | _STORY_STOPWORDS | _AREA_BAD_LEAD | _NAME_STOP
+    while toks and toks[0] in _skip:
         toks = toks[1:]
     sig = [w for w in toks
            if len(w) >= 4 and w not in _STORY_STOPWORDS and w not in _GENERIC_WORDS
-           and w not in _LEADING_VERBS and w not in _AREA_BAD_LEAD]
+           and w not in _LEADING_VERBS and w not in _AREA_BAD_LEAD
+           and w not in _NAME_STOP]
     name = " ".join(w.title() for w in sig[:2])
     if name:
         return name
