@@ -723,7 +723,16 @@ _STOP_TOPIC = {
     "what", "when", "how", "who", "which", "why", "should", "would", "does",
     "will", "can", "must", "may", "happen", "happens", "decide", "decided",
     "decision", "needed", "still", "yet", "resolve", "resolved", "confirm",
-    "not", "any", "each", "some", "before", "after", "within",
+    "not", "any", "each", "some", "before", "after", "within", "from", "into",
+    # measurement units -- never the "shared distinctive point" of a contradiction
+    "hour", "hours", "day", "days", "minute", "minutes", "week", "weeks",
+    "month", "months", "year", "years", "star", "stars", "photo", "photos",
+    "dollar", "dollars", "percent", "attempt", "attempts", "time", "times",
+    "business", "request", "requests",
+    # spelled-out numbers
+    "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    "ten", "eleven", "twelve", "fifteen", "twenty", "thirty", "forty", "fifty",
+    "sixty", "ninety", "hundred", "thousand",
 }
 
 
@@ -780,20 +789,33 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
             nonlocal changed
             block = m.group(1)
             first = block.splitlines()[0]
-            qtext = first.split("]:", 1)[1] if "]:" in first else first
-            qtext = qtext.split(" — raised by", 1)[0].strip()
+            raw_line = first.split("]:", 1)[1] if "]:" in first else first
+            # the call the question was raised in -- a fact from that SAME call
+            # can't be what resolves it (it would have been captured as a fact)
+            qcall_m = re.search(r"raised by [^,]+,\s*([A-Za-z0-9_.\-]+)\s*\(", raw_line)
+            qcall = qcall_m.group(1) if qcall_m else None
+            qtext = raw_line.split(" — raised by", 1)[0].strip()
             qtext = re.sub(r"^(?:Decision needed|Turn into a concrete[^:]*):\s*",
                            "", qtext).strip()
+            # drop a conversational preamble -- keep the last sentence, which
+            # is almost always the actual question
+            parts = re.split(r"(?<=[.?!])\s+", qtext)
+            if len(parts) > 1 and len(parts[-1].split()) >= 4:
+                qtext = parts[-1].strip()
+            qtext = re.sub(r"^(?:that'?s|this is|honestly|so|well|the question is|"
+                           r"we'?re still|we haven'?t)\b[\s,]*", "", qtext, flags=re.I).strip()
             qw = _topicw(qtext)
             if len(qw) < 2:
                 return block
             qnums = _numish(qtext)
             near = None
             for fname, _fp, fact in pool:
+                if qcall and f"source: {qcall}," in fact.get("attribution", ""):
+                    continue  # same call as the question -- not a resolution
                 fbody = fact["summary"] + " " + fact["quote"]
                 fw = _topicw(fbody)
                 shared = len(qw & fw)
-                if shared >= 3 or (shared >= 2 and qnums <= _numish(fbody)):
+                if shared >= 3 or (shared >= 2 and qnums and qnums <= _numish(fbody)):
                     changed = True
                     nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
                     return (nb + f'\n  - resolved by {fname} EF-{fact["id"]} '
@@ -823,44 +845,89 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
 
 
 def flag_cross_doc_contradictions(docs_dir=None, today=None):
-    """Two active facts in DIFFERENT docs that share a topic (>= 2 distinctive
-    words) but carry different numbers get a [NEEDS REVIEW] cross-reference in
-    both docs. Idempotent -- skips a pair already flagged."""
+    """Flag two active facts that state a DIFFERENT value for the SAME unit
+    (e.g. one says "within 24 hours", another "within 48 hours") AND share a
+    genuinely distinctive topic word. Both docs get an X- [NEEDS REVIEW]
+    cross-reference. Idempotent. Deliberately conservative -- a false flag
+    wastes a reviewer's time, so the bar is: same unit, different value,
+    >= 1 shared rare word (in <= a quarter of all facts), text not merely
+    a superset/subset."""
+    if os.environ.get("MOM_CONTRA", "0") != "1":
+        return []   # experimental -- heuristic still over-flags; opt in with MOM_CONTRA=1
     docs_dir = docs_dir or DOCS_DIR
     today = today or date.today().isoformat()
     pool = _all_active_facts(docs_dir)
-    pending = {}  # path -> list[str] of review lines to append
-    seen_pairs = set()
+    if len(pool) < 2:
+        return []
+
+    from collections import Counter
+    df = Counter()
+    fw = []
+    for _n, _p, f in pool:
+        w = _topicw(f["summary"] + " " + f["quote"])
+        fw.append(w)
+        df.update(w)
+    ambient = {k for k, c in df.items() if c * 4 > len(pool)}  # top ~25%
+
+    pending, seen_pairs = {}, set()
     for i in range(len(pool)):
         n1, p1, f1 = pool[i]
-        w1, num1 = _topicw(f1["summary"] + " " + f1["quote"]), _numish(f1["quote"])
-        if not num1:
+        m1 = _measures(f1["summary"] + " " + f1["quote"])
+        if not m1:
             continue
+        d1 = fw[i] - ambient
         for j in range(i + 1, len(pool)):
             n2, p2, f2 = pool[j]
-            if p1 == p2:
+            m2 = _measures(f2["summary"] + " " + f2["quote"])
+            if not m2:
                 continue
-            w2, num2 = _topicw(f2["summary"] + " " + f2["quote"]), _numish(f2["quote"])
-            if not num2 or (num1 & num2) or len(w1 & w2) < 2:
+            # same unit, different value
+            conflict = {(u, v1, v2) for (u, v1) in m1 for (u2, v2) in m2
+                        if u == u2 and v1 != v2}
+            if not conflict:
+                continue
+            shared_rare = d1 & (fw[j] - ambient)
+            if len(shared_rare) < 2:
+                continue
+            # ignore a pure restatement (one quote contains the other)
+            if (_norm_q(f1["quote"]) in _norm_q(f2["quote"])
+                    or _norm_q(f2["quote"]) in _norm_q(f1["quote"])):
+                continue
+            # ignore opposite-direction bounds or a rating scale -- "at least
+            # 4 stars" vs "below 3.5 stars" is not a contradiction, nor is
+            # "one to five stars".
+            b1 = _BOUND_RE.search(f1["quote"]); b2 = _BOUND_RE.search(f2["quote"])
+            lo = {"at least", "minimum", "above", "more than", "over", "from"}
+            hi = {"below", "under", "maximum", "less than", "no more than"}
+            g1 = (b1.group(1).lower() if b1 else "")
+            g2 = (b2.group(1).lower() if b2 else "")
+            if (g1 in lo and g2 in hi) or (g1 in hi and g2 in lo):
+                continue
+            if re.search(r"\b(one|1)\s+to\s+(five|ten|\d+)\b", f1["quote"], re.I) \
+               or re.search(r"\b(one|1)\s+to\s+(five|ten|\d+)\b", f2["quote"], re.I):
                 continue
             key = tuple(sorted((f"{n1}#{f1['id']}", f"{n2}#{f2['id']}")))
             if key in seen_pairs:
                 continue
             seen_pairs.add(key)
+            u, v1, v2 = sorted(conflict)[0]
+            def _fmt(v):
+                return str(int(v)) if float(v).is_integer() else str(v)
             line1 = (f'- **X-{today}-{_slug(n1)}-{f1["id"]}** [NEEDS REVIEW]: '
-                     f'EF-{f1["id"]} here may contradict {n2} EF-{f2["id"]} '
-                     f'({", ".join(sorted(num2))} vs {", ".join(sorted(num1))}) '
-                     f'on a shared topic. Confirm which is current.\n'
+                     f'EF-{f1["id"]} says {_fmt(v1)} {u}(s) but {n2} EF-{f2["id"]} '
+                     f'says {_fmt(v2)} on a shared point ({", ".join(sorted(shared_rare))}). '
+                     f'Confirm which is current.\n'
                      f'  - here: *"{f1["quote"]}"*\n'
                      f'  - {n2} EF-{f2["id"]}: *"{f2["quote"]}"*')
             line2 = (f'- **X-{today}-{_slug(n2)}-{f2["id"]}** [NEEDS REVIEW]: '
-                     f'EF-{f2["id"]} here may contradict {n1} EF-{f1["id"]} '
-                     f'({", ".join(sorted(num1))} vs {", ".join(sorted(num2))}) '
-                     f'on a shared topic. Confirm which is current.\n'
+                     f'EF-{f2["id"]} says {_fmt(v2)} {u}(s) but {n1} EF-{f1["id"]} '
+                     f'says {_fmt(v1)} on a shared point ({", ".join(sorted(shared_rare))}). '
+                     f'Confirm which is current.\n'
                      f'  - here: *"{f2["quote"]}"*\n'
                      f'  - {n1} EF-{f1["id"]}: *"{f1["quote"]}"*')
             pending.setdefault(p1, []).append(line1)
-            pending.setdefault(p2, []).append(line2)
+            if p2 != p1:
+                pending.setdefault(p2, []).append(line2)
 
     results = []
     for path, lines in pending.items():
@@ -930,11 +997,54 @@ def _best_supersede_target(new_txt, active_facts):
 
 _NUMWORD_RE = re.compile(
     r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-    r"fifteen|twenty|thirty|forty|fifty|sixty|ninety|hundred|\d+)\b", re.I)
+    r"fifteen|twenty|thirty|forty|fifty|sixty|ninety|hundred|"
+    r"\d+(?:,\d{3})*(?:\.\d+)?)\b", re.I)
+
+_WORDNUM = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+            "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+            "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30,
+            "forty": 40, "fifty": 50, "sixty": 60, "ninety": 90}
+
+# Units that make "N <unit>" a comparable measurement. A contradiction is the
+# SAME unit with a DIFFERENT value on a shared topic.
+_UNIT_RE = re.compile(
+    r"\b(hours?|days?|minutes?|weeks?|months?|years?|business days?|"
+    r"stars?|photos?|dollars?|usd|percent|%|attempts?|times?|"
+    r"requests? per minute|per minute)\b", re.I)
+_BOUND_RE = re.compile(
+    r"\b(at least|at most|minimum|maximum|no more than|no less than|"
+    r"more than|less than|above|below|under|over|up to|from)\b", re.I)
 
 
 def _numish(text):
-    return {m.lower() for m in _NUMWORD_RE.findall(text or "")}
+    return {m.lower().replace(",", "") for m in _NUMWORD_RE.findall(text or "")}
+
+
+def _num_val(tok):
+    tok = tok.lower().replace(",", "")
+    if tok in _WORDNUM:
+        return _WORDNUM[tok]
+    try:
+        return float(tok)
+    except ValueError:
+        return None
+
+
+def _measures(text):
+    """{(unit, value), ...} -- 'within 24 hours' -> ('hour', 24.0). Only
+    'N <unit>' pairs, so a contradiction check compares like with like."""
+    t = (text or "").lower()
+    out = set()
+    for m in _NUMWORD_RE.finditer(t):
+        v = _num_val(m.group(0))
+        if v is None:
+            continue
+        tail = t[m.end():m.end() + 25]
+        um = _UNIT_RE.match(tail.strip())
+        if um:
+            unit = re.sub(r"s$", "", um.group(1).strip().replace("business ", ""))
+            out.add((unit, v))
+    return out
 
 
 def _is_multipart(quote):

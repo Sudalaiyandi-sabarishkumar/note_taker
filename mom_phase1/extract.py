@@ -315,8 +315,14 @@ def _is_logistics(quote: str) -> bool:
 # summary+quote (the model often files these as ## STATEMENT).
 _UNDECIDED_RE = re.compile(
     r"\b("
-    r"(?:haven'?t|have not|hasn'?t|has not|not|never|yet to be|still to be)\s+"
-    r"(?:yet\s+|been\s+)*(?:decided|settled|agreed|determined|finali[sz]ed|confirmed|chosen|nailed down)"
+    # "we / the team / finance haven't decided ..." -- a decision-making party
+    r"(?:we|they|the team|finance|legal|product|nobody|no one)\s+"
+    r"(?:have\s+|has\s+|had\s+)?(?:not\s+|n'?t\s+|are not\s+|aren'?t\s+)?(?:yet\s+|been\s+)*"
+    r"(?:decided|settled|agreed|determined|finali[sz]ed|chosen|nailed (?:it )?down)"
+    # "... not decided on / whether / how ..." -- an explicit undecided marker
+    r"|(?:haven'?t|hasn'?t|have not|has not|not|never)\s+(?:yet\s+|been\s+)*"
+    r"(?:decided|settled|agreed|determined|finali[sz]ed|chosen)\s+"
+    r"(?:on|upon|whether|if|yet|between|what|which|how|the (?:approach|design))"
     r"|no (?:final )?decision|(?:still|currently) (?:open|undecided|tbd|under discussion|being discussed|in discussion|up in the air)"
     r"|to be (?:decided|determined|confirmed)|\btbd\b|undetermined|open question|open item"
     r"|still (?:checking|deciding|discussing|arguing|debating|working (?:it|this) out|figuring (?:it|this) out|to be worked out)"
@@ -722,6 +728,8 @@ _AREA_BAD_LEAD = {
     "there", "here", "this", "that", "these", "those", "it", "they", "we",
     "also", "and", "but", "so", "then", "the", "a", "an",
     "yes", "no", "ok", "okay", "well", "just",
+    "both", "each", "every", "all", "any", "some", "another", "one", "two",
+    "three", "four", "five", "ten", "fifteen", "twenty",
 }
 
 
@@ -1356,6 +1364,8 @@ _GENERIC_WORDS = {
     "process", "management", "support", "service", "option", "setting", "data",
     "app", "product", "item", "list", "detail", "section", "area", "module",
     "feature", "system", "platform", "content", "info", "information", "tool",
+    "document", "documents", "thing", "things", "away", "back", "later",
+    "now", "requirement", "requirements", "wrinkle", "catch", "exception",
 }
 
 
