@@ -4,16 +4,17 @@
 # a trigger here, including 7B-stress (call1 is a dense ~70-line, 4-chunk
 # scoping workshop). ~60-75 min vs ~2.5 h.  Output -> ./combined_knowledge/
 #
-#   ./examples/run_combined.sh
+#   ./examples/combined/run_combined.sh
 #
 set -u
-cd "$(dirname "$0")/.."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/../.."                       # repo root
 MP=".venv/bin/mom-phase1"; [ -x "$MP" ] || MP="mom-phase1"
 export MOM_DOCS_DIR="${MOM_DOCS_DIR:-combined_knowledge}"
 rm -rf "$MOM_DOCS_DIR"
 
-CALLS=(examples/combined_call1.txt examples/combined_call2.vtt
-       examples/combined_call3.txt examples/combined_empty.txt)
+CALLS=("$HERE"/combined_call1.txt "$HERE"/combined_call2.vtt
+       "$HERE"/combined_call3.txt "$HERE"/combined_empty.txt)
 
 for t in "${CALLS[@]}"; do
   echo "════════════════════ $t ════════════════════"

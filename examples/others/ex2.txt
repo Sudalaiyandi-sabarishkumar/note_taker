@@ -1,0 +1,33 @@
+**PM:** Good morning! Let's go over the requirements for the Todo App. Can you walk me through what you have in mind?
+ 
+**Client:** Sure. First, I want the login to be simple. Users should log in using only their email address and password.
+ 
+**PM:** Got it. So no phone number or social login, just email and password.
+ 
+**Client:** Exactly.
+ 
+**PM:** What if a user forgets their password?
+ 
+**Client:** In that case, there should be a "Forgot Password" option. When they use it, we should send them a password reset email.
+ 
+**PM:** Okay, we'll send a forgot password email so they can reset their password.
+ 
+**Client:** Yes.
+ 
+**PM:** Moving on to the main functionality, what should users be able to do with their todo tasks?
+ 
+**Client:** They should be able to add new tasks, edit existing ones, and delete tasks they no longer need.
+ 
+**PM:** Understood. Add, edit, and delete operations for todo tasks.
+ 
+**Client:** That's right.
+ 
+**PM:** Anything else for the tasks?
+ 
+**Client:** Yes. Users should also be able to mark a task as completed once they've finished it.
+ 
+**PM:** Perfect. So each task can be marked as complete.
+ 
+**Client:** Exactly. Those are the requirements for the first version.
+ 
+**PM:** Great. I'll document these requirements and we'll proceed with the implementation.
