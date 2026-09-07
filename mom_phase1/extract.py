@@ -599,7 +599,51 @@ def extract_statements(transcript_text: str, known_features, model=None,
     # Deterministic sweep for "we haven't decided / let me check / misaligned"
     # lines the model skipped -- record them as open questions.
     kept.extend(_scan_open_questions(transcript_text, seen_quotes))
+
+    # A clarifying question that a LATER line in the SAME call answers is not
+    # an open item -- drop it. ("what happens if they fail the quiz?" ->
+    # "locked out for 24 hours" two turns later.)
+    kept = _drop_answered_questions(kept, norm_transcript)
     return kept
+
+
+_QUESTION_WORDS = {"what", "when", "where", "who", "whom", "which", "why",
+                   "how", "does", "do", "did", "will", "would", "should",
+                   "could", "can", "is", "are", "there", "any", "happen",
+                   "happens", "clarify", "clarification", "confirm"}
+
+
+def _drop_answered_questions(kept, norm_transcript):
+    """Remove an open question when a later declarative fact in the same call
+    covers it -- >= 2 shared distinctive words and a strictly later position
+    in the transcript."""
+    if not norm_transcript:
+        return kept
+    fact_pos = []
+    for it in kept:
+        if it.get("kind") == "question":
+            continue
+        p = norm_transcript.find(_normalise(it["quote"]))
+        if p >= 0:
+            fw = _content_words(it["summary"] + " " + it["quote"]) - _QUESTION_WORDS
+            fact_pos.append((p, fw))
+    out = []
+    for it in kept:
+        if it.get("kind") != "question":
+            out.append(it)
+            continue
+        qp = norm_transcript.find(_normalise(it["quote"]))
+        qw = _content_words(it["summary"] + " " + it["quote"]) - _QUESTION_WORDS
+        # answered if a later fact either (a) shares 2+ distinctive words, or
+        # (b) shares 1 and sits within ~3 turns (500 chars) -- an answer
+        # given "in the same breath".
+        if qp >= 0 and len(qw) >= 2 and any(
+                fp > qp and (len(qw & fw) >= 2
+                             or (len(qw & fw) >= 1 and fp - qp < 500))
+                for fp, fw in fact_pos):
+            continue
+        out.append(it)
+    return out
 
 
 # --------------------------------------------------------------------------

@@ -323,14 +323,22 @@ def _rehome_orphan_questions(statements, existing, docs_dir):
     if not host_text:
         return
 
+    # the biggest feature that gets facts this run -- the fallback host when
+    # a question matches nothing well
+    big_fact_feat = max(fact_feats, key=lambda f: counts.get(f, 0), default=None)
+
     for of in orphan_feats:
         for s in q_by_feat[of]:
             qwords = _mwords(s["summary"] + " " + s["quote"])
-            best = max(
-                host_text,
-                key=lambda h: (len(qwords & _mwords(host_text[h])), counts.get(h, 0)),
-            )
-            s["feature"] = best
+            scored = sorted(
+                ((len(qwords & _mwords(host_text[h])), counts.get(h, 0), h)
+                 for h in host_text), reverse=True)
+            overlap, _, best = scored[0]
+            if overlap >= 2:
+                s["feature"] = best          # a real topical match
+            elif big_fact_feat is not None:
+                s["feature"] = big_fact_feat  # park it on this run's main doc
+            # else: leave s["feature"] as its orphan area -> dropped + logged
 
 
 def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
@@ -784,11 +792,14 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
         if "[OPEN QUESTION]" not in oq:
             continue
         changed = False
+        resolved_log = []
 
         def _resolve(m):
             nonlocal changed
             block = m.group(1)
             first = block.splitlines()[0]
+            qid_m = re.search(r"\*\*(Q-[^*]+)\*\*", first)
+            qid = qid_m.group(1) if qid_m else "the open question"
             raw_line = first.split("]:", 1)[1] if "]:" in first else first
             # the call the question was raised in -- a fact from that SAME call
             # can't be what resolves it (it would have been captured as a fact)
@@ -817,6 +828,8 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
                 shared = len(qw & fw)
                 if shared >= 3 or (shared >= 2 and qnums and qnums <= _numish(fbody)):
                     changed = True
+                    resolved_log.append(
+                        f'- {today}: {qid} resolved by {fname} EF-{fact["id"]}.')
                     nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
                     return (nb + f'\n  - resolved by {fname} EF-{fact["id"]} '
                             f'({today}): *"{fact["quote"]}"*\n')
@@ -828,6 +841,8 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
                 llm_budget[0] -= 1
                 if resolve_fn(qtext.strip(), near[1]["quote"]):
                     changed = True
+                    resolved_log.append(
+                        f'- {today}: {qid} resolved by {near[0]} EF-{near[1]["id"]}.')
                     nb = block.replace("[OPEN QUESTION]", "[RESOLVED]", 1).rstrip()
                     return (nb + f'\n  - resolved by {near[0]} EF-{near[1]["id"]} '
                             f'({today}): *"{near[1]["quote"]}"*\n')
@@ -837,6 +852,14 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
         if changed:
             new_text = text.replace(f"## Open Questions / Ambiguities\n{oq}",
                                     f"## Open Questions / Ambiguities\n{new_oq}", 1)
+            # back-link into the Change Log so the history shows the close-out
+            if resolved_log and sec.get("change_log") is not None:
+                cl = sec["change_log"].rstrip()
+                new_cl = (cl + "\n" if cl and cl.lower() not in ("- none.", "none")
+                          else "") + "\n".join(resolved_log)
+                new_text = new_text.replace(
+                    f"## Change Log\n{sec['change_log']}",
+                    f"## Change Log\n{new_cl}\n", 1)
             if new_text != text:
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(new_text)
@@ -848,17 +871,19 @@ def flag_cross_doc_contradictions(docs_dir=None, today=None):
     """Flag two active facts that state a DIFFERENT value for the SAME unit
     (e.g. one says "within 24 hours", another "within 48 hours") AND share a
     genuinely distinctive topic word. Both docs get an X- [NEEDS REVIEW]
-    cross-reference. Idempotent. Deliberately conservative -- a false flag
-    wastes a reviewer's time, so the bar is: same unit, different value,
-    >= 1 shared rare word (in <= a quarter of all facts), text not merely
-    a superset/subset."""
-    if os.environ.get("MOM_CONTRA", "0") != "1":
-        return []   # experimental -- heuristic still over-flags; opt in with MOM_CONTRA=1
+    cross-reference. Idempotent. On by default; opt out with MOM_CONTRA=0.
+    Conservative -- a false flag wastes a reviewer's time, so the bar is:
+    same unit, different value, >= 2 shared rare words (in <= a quarter of
+    all facts), not a restatement, not opposite-direction bounds, and not a
+    pair already linked by supersede / partial-supersede."""
+    if os.environ.get("MOM_CONTRA", "1") == "0":
+        return []   # opt out with MOM_CONTRA=0
     docs_dir = docs_dir or DOCS_DIR
     today = today or date.today().isoformat()
     pool = _all_active_facts(docs_dir)
     if len(pool) < 2:
         return []
+    doc_text = {}   # path -> full text, for the "already linked" check
 
     from collections import Counter
     df = Counter()
@@ -893,6 +918,22 @@ def flag_cross_doc_contradictions(docs_dir=None, today=None):
             if (_norm_q(f1["quote"]) in _norm_q(f2["quote"])
                     or _norm_q(f2["quote"]) in _norm_q(f1["quote"])):
                 continue
+            # ignore a pair already linked by supersede / partial-supersede in
+            # the same doc (the "EF-2 updates PART of EF-1" case is not a
+            # contradiction -- it is a known, flagged refinement)
+            if p1 == p2:
+                if p1 not in doc_text:
+                    try:
+                        with open(p1, encoding="utf-8") as fh:
+                            doc_text[p1] = fh.read()
+                    except OSError:
+                        doc_text[p1] = ""
+                t = doc_text[p1]
+                if (f"updates PART of EF-{f1['id']}" in t
+                        or f"updates PART of EF-{f2['id']}" in t
+                        or f"superseded by EF-{f1['id']}" in t
+                        or f"superseded by EF-{f2['id']}" in t):
+                    continue
             # ignore opposite-direction bounds or a rating scale -- "at least
             # 4 stars" vs "below 3.5 stars" is not a contradiction, nor is
             # "one to five stars".
