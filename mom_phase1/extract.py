@@ -834,6 +834,11 @@ _NAME_STOP = {
     "anymore", "instead", "into", "onto", "upon",
     "always", "never", "often", "usually", "sometimes", "rarely", "really",
     "very", "quite", "long", "short", "more", "less", "most", "least",
+    # discourse fillers and bare comparatives the model grabs as a "topic"
+    "said", "says", "absolutely", "airtight", "actually", "basically",
+    "essentially", "honestly", "obviously", "frankly", "bigger", "smaller",
+    "faster", "slower", "worse", "thing", "stuff", "part", "point", "case",
+    "way", "kind", "sort", "cycle",
 }
 
 
@@ -995,8 +1000,7 @@ def cohesion_split(statements, existing):
         comps = _components(words)
         # A dump doc where one noun ("ticket") repeats in every line collapses
         # to a single component -- retry with the ambient nouns stripped so
-        # the real sub-topics separate. Only for catch-all-named areas: a
-        # specific name is trusted and never force-split this way.
+        # the real sub-topics separate. Only for catch-all-named areas.
         if len(comps) < 2 and dump and ambient:
             comps = _components([w - ambient for w in words])
 
