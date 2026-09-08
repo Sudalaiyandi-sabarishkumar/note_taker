@@ -485,6 +485,15 @@ def extract_statements(transcript_text: str, known_features, model=None,
     chunks = chunk_transcript(transcript_text)
     norm_transcript = _normalise(transcript_text)
 
+    # Coverage pass default: ON for a first/scoping call, but a short
+    # follow-up call against an existing KB is a change-list, not a dense
+    # span to re-scan -- the second extraction there roughly doubles cost for
+    # almost no yield. MOM_COVERAGE=1 forces it back on, MOM_COVERAGE=0 off.
+    _cov_default = "0" if (known_features and len(transcript_text) < 1500) else "1"
+    _coverage_on = os.environ.get("MOM_COVERAGE", _cov_default) != "0"
+    if not _coverage_on and _cov_default == "0":
+        progress("  (short follow-up call — skipping coverage pass)")
+
     progress(f"Extracting cited statements from {len(chunks)} part(s)...")
     found = []
     # Feature names grow as chunks are processed so a later chunk of the SAME
@@ -512,7 +521,7 @@ def extract_statements(transcript_text: str, known_features, model=None,
         # concrete requirements the first pass missed. A 7B under-extracts
         # from dense spans; exact repeats are dropped by quote de-dup below,
         # and reconcile handles near-repeats as DUPLICATE at merge time.
-        if os.environ.get("MOM_COVERAGE", "1") != "0" and len(chunk) > 400:
+        if _coverage_on and len(chunk) > 400:
             progress(f"  part {i}/{len(chunks)} (coverage check)...")
             cov_raw = strip_think(chat(
                 [{"role": "system", "content": _SYSTEM},
@@ -711,7 +720,10 @@ is NEW or DUPLICATE, never CHANGE."""
     raw = chat(
         [{"role": "system", "content": _RECONCILE_SYSTEM},
          {"role": "user", "content": prompt}],
-        model=model, show_progress=False, num_predict=1500,
+        # Emits exactly three short lines (VERDICT / TARGET / REASON); 200 is
+        # ample. This call runs once per statement routed to a populated
+        # feature, so its generation length dominates per-call cost.
+        model=model, show_progress=False, num_predict=200,
     )
     answer = strip_think(raw)
 
@@ -1077,7 +1089,8 @@ Output exactly {n} lines."""
     try:
         raw = chat([{"role": "system", "content": _CANON_SYSTEM},
                     {"role": "user", "content": prompt}],
-                   model=model, show_progress=False, num_predict=1000, temperature=0)
+                   # one short "<n> = <area>" line per statement
+                   model=model, show_progress=False, num_predict=500, temperature=0)
     except Exception:
         return fallback
 

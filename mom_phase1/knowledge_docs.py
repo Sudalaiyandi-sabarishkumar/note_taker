@@ -408,6 +408,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         by_feature.setdefault(s["feature"], []).append(s)
 
     summary = []
+    facts_touched = 0  # new / changed / partially-superseded facts, all features
     for feature, group in by_feature.items():
         path = existing.get(feature)
         if path:
@@ -498,10 +499,22 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 n_new += 1
                 continue
 
-            verdict, target_id, reason = (
-                reconcile(feature, active, s) if reconcile
-                else ("UNCLEAR", None, "")
-            )
+            # Perf: a statement that shares no distinctive word with ANY active
+            # fact of this feature cannot be a DUPLICATE or a CHANGE of one --
+            # it is NEW. Skip the (expensive) reconcile LLM call for it. The
+            # "no change / stays as is" phrasings are excluded so they still
+            # reach the restatement handling below.
+            stmt_txt = s["summary"] + " " + s["quote"]
+            if (reconcile and not _NOCHANGE_RE.search(stmt_txt)
+                    and not any(_mwords(stmt_txt)
+                                & _mwords(f["summary"] + " " + f["quote"])
+                                for f in active)):
+                verdict, target_id, reason = "NEW", None, ""
+            else:
+                verdict, target_id, reason = (
+                    reconcile(feature, active, s) if reconcile
+                    else ("UNCLEAR", None, "")
+                )
             reason_txt = f" Reason: {reason}" if reason else ""
             target = next((f for f in active if f["id"] == target_id), None)
 
@@ -706,14 +719,18 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
         if n_unverified: bits.append(f"{n_unverified} unverified")
         if n_open: bits.append(f"{n_open} open question(s)")
         summary.append(f"- {feature}: " + ", ".join(bits) + f"  ->  {path}")
+        facts_touched += n_new + n_change + n_review
 
     # Cross-doc passes over the whole knowledge base: close open questions a
     # later fact has answered, and flag facts in different docs that
-    # contradict each other on a number.
-    for line in resolve_open_questions(docs_dir, today, resolve_fn):
-        summary.append(line)
-    for line in flag_cross_doc_contradictions(docs_dir, today):
-        summary.append(line)
+    # contradict each other on a number. Both only act on facts, so if this
+    # run added/changed none there is nothing new for them to find -- the
+    # previous run already ran them against the same fact set. Skip.
+    if facts_touched:
+        for line in resolve_open_questions(docs_dir, today, resolve_fn):
+            summary.append(line)
+        for line in flag_cross_doc_contradictions(docs_dir, today):
+            summary.append(line)
     return summary
 
 
