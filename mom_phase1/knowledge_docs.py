@@ -56,9 +56,44 @@ _NOCHANGE_RE = re.compile(
 )
 _NUM_TOKEN_RE = re.compile(r"\d[\d,]*")
 
+# A statement that revises an earlier requirement. When one of these lands as
+# a brand-new fact (new lone doc, or NEW verdict with no wording overlap) the
+# baseline it revises was probably missed or lives on another feature -- flag
+# it for review instead of silently keeping an orphan "change" as a fact.
+_CHANGE_VERB_RE = re.compile(
+    r"\b(change (?:that|it|this|the)\b|changed? it to\b|make (?:it|that|a month)\b|"
+    r"instead of\b|no longer\b|put (?:it|that) back\b|bring back\b|"
+    r"take (?:it|that) out\b|drop the\b|remove the\b|scrap the\b|"
+    r"(?:lower|raise|shorten|extend|increase|decrease|reduce|cut|bump|move)\b"
+    r"[^.?!]{0,30}\b(?:to|from|down to|up to)\b|"
+    r"switch\b[^.?!]{0,20}\bto\b|default it to\b|four down to three\b|"
+    r"last (?:week|call|time) (?:i|we) said\b|we said\b[^.?!]{0,30}\bchange\b)\b",
+    re.IGNORECASE,
+)
+
 
 def _numbers(text):
     return {t.replace(",", "") for t in _NUM_TOKEN_RE.findall(text or "")}
+
+
+def _find_baseline_elsewhere(stmt_text, this_feature, existing):
+    """Best (feature, fact) on ANOTHER doc whose wording overlaps ``stmt_text``
+    -- the likely baseline a stray CHANGE statement should supersede. Returns
+    None when nothing shares >= 2 distinctive words."""
+    sw = _mwords(stmt_text)
+    best, best_ov = None, 1
+    for feat, path in existing.items():
+        if feat == this_feature:
+            continue
+        try:
+            _, facts = _read_doc(path)
+        except OSError:
+            continue
+        for f in _active(facts):
+            ov = len(sw & _mwords(f["summary"] + " " + f["quote"]))
+            if ov > best_ov:
+                best_ov, best = ov, (feat, f)
+    return best
 
 
 def _norm_q(text):
@@ -497,6 +532,32 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                                   "attribution": attribution})
                 next_id += 1
                 n_new += 1
+                # B: a brand-new lone doc born from a CHANGE statement ("change
+                # that to X", "make a month 31 days", "put the note field back")
+                # rarely stands alone -- the fact it revises was missed or is on
+                # another feature. Flag it; point at the likely baseline.
+                if (feature not in existing
+                        and _CHANGE_VERB_RE.search(s["summary"] + " " + s["quote"])):
+                    cand = _find_baseline_elsewhere(
+                        s["summary"] + " " + s["quote"], feature, existing)
+                    if cand:
+                        cf, cfact = cand
+                        new_questions.append(
+                            f'- **{q_id}** [NEEDS REVIEW]: EF-{next_id - 1} reads as a '
+                            f'change ("{s["summary"].rstrip(".")}") but the requirement '
+                            f'it revises looks like **{cf} EF-{cfact["id"]}**. Confirm, '
+                            f'and supersede it there rather than keeping this as a '
+                            f'standalone fact.\n'
+                            f'  - this: *"{s["quote"]}"* — {attribution}\n'
+                            f'  - {cf} EF-{cfact["id"]}: *"{cfact["quote"]}"*')
+                    else:
+                        new_questions.append(
+                            f'- **{q_id}** [NEEDS REVIEW]: EF-{next_id - 1} reads as a '
+                            f'change ("{s["summary"].rstrip(".")}") but no earlier fact '
+                            f'matches it -- the original requirement was likely missed '
+                            f'on a previous call. Confirm what this changes.\n'
+                            f'  - *"{s["quote"]}"* — {attribution}')
+                    n_review += 1
                 continue
 
             # Perf: a statement that shares no distinctive word with ANY active
@@ -524,6 +585,22 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                                   "attribution": attribution})
                 next_id += 1
                 n_new += 1
+                # B: NEW verdict but the wording reads as a revision -- the
+                # fact it changes shares no words with any active fact here, so
+                # it was missed or lives on another feature. Flag, don't bury.
+                if _CHANGE_VERB_RE.search(stmt_txt):
+                    cand = _find_baseline_elsewhere(stmt_txt, feature, existing)
+                    if cand:
+                        cf, cfact = cand
+                        new_questions.append(
+                            f'- **{q_id}** [NEEDS REVIEW]: EF-{next_id - 1} reads as a '
+                            f'change ("{s["summary"].rstrip(".")}") but shares no '
+                            f'wording with any fact on "{feature}"; the requirement it '
+                            f'revises looks like **{cf} EF-{cfact["id"]}**. Confirm and '
+                            f'supersede it there.\n'
+                            f'  - this: *"{s["quote"]}"* — {attribution}\n'
+                            f'  - {cf} EF-{cfact["id"]}: *"{cfact["quote"]}"*')
+                        n_review += 1
 
             elif verdict == "DUPLICATE" and target is not None:
                 extra_log.append(

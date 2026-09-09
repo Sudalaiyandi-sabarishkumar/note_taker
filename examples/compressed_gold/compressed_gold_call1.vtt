@@ -1,0 +1,121 @@
+WEBVTT
+
+1
+00:00:02.100 --> 00:00:05.900
+<v Mani Selvam>Hello? Yeah, sorry, hi. Okay. So, this is the, the gold app.</v>
+
+2
+00:00:05.900 --> 00:00:08.400
+<v Latha Rao>Yep, we've got you. Ravi's on too.</v>
+
+3
+00:00:08.400 --> 00:00:14.680
+<v Mani Selvam>Right. So it's just me using it. One person. No staff, no, no other logins, ever.</v>
+
+4
+00:00:15.100 --> 00:00:20.900
+<v Mani Selvam>One fixed login, username mani, password one nine seven seven. No sign up, no forgot password.</v>
+
+5
+00:00:21.400 --> 00:00:23.900
+<v Ravi Kumar>Got it. And what's it actually tracking.</v>
+
+6
+00:00:23.900 --> 00:00:31.680
+<v Mani Selvam>My stock. It's all one pool, in grams, and one weighted average cost per gram. That's the number I run on.</v>
+
+7
+00:00:32.100 --> 00:00:33.900
+<v Ravi Kumar>Walk me through a buy.</v>
+
+8
+00:00:33.900 --> 00:00:42.680
+<v Mani Selvam>On a buy the new average is old grams times old average, plus the grams bought times the rate, over the total grams after. Then quantity goes up by what I bought.</v>
+
+9
+00:00:43.100 --> 00:00:44.900
+<v Ravi Kumar>And a sale.</v>
+
+10
+00:00:44.900 --> 00:00:53.680
+<v Mani Selvam>Sale, the average doesn't move. Grams come off. And the profit is the grams sold times the sale rate minus the average cost. Realised profit's just, all of those added up.</v>
+
+11
+00:00:54.100 --> 00:01:01.680
+<v Mani Selvam>And the stock's never stored. It's always worked out by replaying every transaction in date order, from the start. So it can't drift.</v>
+
+12
+00:01:02.100 --> 00:01:08.900
+<v Mani Selvam>One hard rule, I can never sell more than I'm holding. If a sale's over the stock, the app blocks it, Save's dead, it tells me what's available.</v>
+
+13
+00:01:09.400 --> 00:01:11.900
+<v Ravi Kumar>What's on a transaction.</v>
+
+14
+00:01:11.900 --> 00:01:19.680
+<v Mani Selvam>Buy or sell, the date, the party's name, weight in grams, rate per gram, and, uh, an optional note. Total's always weight times rate, the server does it, I don't type it.</v>
+
+15
+00:01:20.100 --> 00:01:24.900
+<v Mani Selvam>Round the money to two decimals and the gold weight to four decimals.</v>
+
+16
+00:01:25.400 --> 00:01:31.680
+<v Mani Selvam>History's a list, newest first, each line shows the stock after it. I search it by name or the note, and by a date range.</v>
+
+17
+00:01:32.100 --> 00:01:33.900
+<v Latha Rao>Payments. Everything paid up front?</v>
+
+18
+00:01:33.900 --> 00:01:42.680
+<v Mani Selvam>Ha, no. Full, or part now part later, or nothing now. Both directions. So each transaction tracks paid and due, and keeps the list of instalments.</v>
+
+19
+00:01:43.100 --> 00:01:48.900
+<v Mani Selvam>And payments never touch the stock or the profit. That's locked at the time of the trade, whenever the cash turns up is separate.</v>
+
+20
+00:01:49.400 --> 00:01:53.900
+<v Latha Rao>The amount paid box, should it default to the full amount?</v>
+
+21
+00:01:53.900 --> 00:01:58.680
+<v Mani Selvam>No default. Prompt me for the amount paid every single time. I'd rather type it.</v>
+
+22
+00:01:59.100 --> 00:02:05.680
+<v Mani Selvam>Status is paid, part paid, or unpaid, worked out from the payments, not a button. And a new payment can't be more than what's still owing on that bill.</v>
+
+23
+00:02:06.100 --> 00:02:13.680
+<v Mani Selvam>Every party gets their own page, all their bills, and one net number, receivable if they owe me, payable if I owe them.</v>
+
+24
+00:02:14.100 --> 00:02:18.900
+<v Mani Selvam>Names come from a dropdown of ones I've used, and matching ignores case, so Sekar and sekar are one person.</v>
+
+25
+00:02:19.400 --> 00:02:25.680
+<v Mani Selvam>I start with an opening cash amount and an opening gold amount in grams, both editable. Cash and gold in stock flow through everything after that.</v>
+
+26
+00:02:26.100 --> 00:02:29.900
+<v Mani Selvam>Oh, look and feel, it's yellow on black. Gold on a dark background. That's it.</v>
+
+27
+00:02:30.400 --> 00:02:35.680
+<v Mani Selvam>One thing I haven't decided, whether the opening balances lock once there's transactions in. Leave that open.</v>
+
+28
+00:02:36.100 --> 00:02:41.680
+<v Mani Selvam>And honestly, more than anything, it just has to feel fast and calm. I do this tired at the end of the day.</v>
+
+29
+00:02:42.100 --> 00:02:44.900
+<v Latha Rao>Understood, that's a principle not a spec line. Good first pass, same time next week.</v>
+
+30
+00:02:44.900 --> 00:02:46.400
+<v Mani Selvam>Thanks both.</v>

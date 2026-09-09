@@ -1,0 +1,217 @@
+WEBVTT
+
+1
+00:00:01.400 --> 00:00:04.900
+<v Latha Rao>Okay I think we're all here. Mani, you good to start?</v>
+
+2
+00:00:04.900 --> 00:00:09.220
+<v Mani Selvam>Yeah. I read the notes, they're good, mostly right. I've got a bunch of changes though.</v>
+
+3
+00:00:09.220 --> 00:00:12.900
+<v Latha Rao>That's what these are for. Let's do changes first, then anything new. Go.</v>
+
+4
+00:00:13.400 --> 00:00:19.680
+<v Mani Selvam>So, opening balances. I said I'd give you the actual starting numbers. Opening cash, fifteen lakh rupees. Opening gold, a hundred grams.</v>
+
+5
+00:00:20.100 --> 00:00:22.900
+<v Ravi Kumar>Fifteen lakh cash, a hundred grams gold, as the starting position. Got it.</v>
+
+6
+00:00:22.900 --> 00:00:24.010
+<v Latha Rao>And still editable, yeah?</v>
+
+7
+00:00:24.010 --> 00:00:26.900
+<v Mani Selvam>Still editable, yeah, don't change that part.</v>
+
+8
+00:00:27.400 --> 00:00:34.680
+<v Mani Selvam>Next one. Last week I told you not to put a default on the amount paid, to make me type it every time. Forget that. Change it.</v>
+
+9
+00:00:35.100 --> 00:00:36.900
+<v Latha Rao>Okay, so what do you want instead.</v>
+
+10
+00:00:36.900 --> 00:00:44.680
+<v Mani Selvam>Default the amount paid to the full total. Most of my trades are paid on the spot anyway, so, just fill it in as fully paid and I'll knock it down on the ones that aren't.</v>
+
+11
+00:00:45.100 --> 00:00:49.900
+<v Ravi Kumar>Right, so it flips. Default to fully paid, operator lowers it when it's a credit deal. That replaces last week's "always prompt".</v>
+
+12
+00:00:49.900 --> 00:00:50.900
+<v Mani Selvam>Yeah.</v>
+
+13
+00:00:51.400 --> 00:00:57.680
+<v Mani Selvam>Um, and the note field on a transaction. Take it out. I said it'd be useful, it won't be, I never write notes. Remove it.</v>
+
+14
+00:00:58.100 --> 00:01:00.900
+<v Latha Rao>Drop the note field from a transaction entirely. Okay, noted.</v>
+
+15
+00:01:01.400 --> 00:01:03.900
+<v Latha Rao>While we're on changes, couple of things I want to just confirm haven't moved.</v>
+
+16
+00:01:03.900 --> 00:01:04.900
+<v Mani Selvam>Go on.</v>
+
+17
+00:01:04.900 --> 00:01:08.680
+<v Latha Rao>The stock costing, the weighted average method. That's unchanged?</v>
+
+18
+00:01:09.100 --> 00:01:13.900
+<v Mani Selvam>Weighted average, unchanged, exactly as we said. And you still can't ever sell past the stock, that's unchanged too.</v>
+
+19
+00:01:14.400 --> 00:01:16.900
+<v Ravi Kumar>Great, so those two are just, restated, no change.</v>
+
+20
+00:01:17.400 --> 00:01:23.900
+<v Mani Selvam>Oh, and on the party page. Show every one of that person's bills, and the one net total, and, um, the name matching ignores case.</v>
+
+21
+00:01:24.400 --> 00:01:27.900
+<v Latha Rao>That's, yeah, that's all from last week, but good to have it in one line.</v>
+
+22
+00:01:28.400 --> 00:01:30.900
+<v Priya Menon>Sorry, I joined a couple minutes late, did I miss the</v>
+
+23
+00:01:30.900 --> 00:01:33.900
+<v Latha Rao>Just changes so far Priya, nothing on the visual side. Carry on Mani.</v>
+
+24
+00:01:34.400 --> 00:01:37.900
+<v Mani Selvam>Okay, the new thing. This is a whole area we didn't cover. Loans.</v>
+
+25
+00:01:37.900 --> 00:01:38.900
+<v Ravi Kumar>Loans, okay.</v>
+
+26
+00:01:38.900 --> 00:01:46.680
+<v Mani Selvam>So I lend money out. And sometimes I lend gold out, actual grams. People I know, small stuff, but I want it tracked in the same app.</v>
+
+27
+00:01:47.100 --> 00:01:48.900
+<v Latha Rao>Cash loans and gold loans. How does the interest work?</v>
+
+28
+00:01:48.900 --> 00:01:52.900
+<v Mani Selvam>Different. A cash loan, the interest is per day. A gold loan, it's per month.</v>
+
+29
+00:01:52.900 --> 00:01:54.900
+<v Ravi Kumar>Cash per day, gold per month. Okay, and the actual calculation?</v>
+
+30
+00:01:54.900 --> 00:02:04.680
+<v Mani Selvam>It's the principal, divided by a reference amount, times a rate, times how many periods have gone by. So like, a hundred rupees per, uh, per day per one lakh lent. That kind of shape.</v>
+
+31
+00:02:05.100 --> 00:02:06.900
+<v Ravi Kumar>Sorry, you broke up. Principal over a reference amount, times the rate, times</v>
+
+32
+00:02:06.900 --> 00:02:10.680
+<v Mani Selvam>Times the number of periods elapsed. Days for cash, months for gold.</v>
+
+33
+00:02:11.100 --> 00:02:13.900
+<v Ravi Kumar>And a month is, what, a calendar month or a fixed number?</v>
+
+34
+00:02:13.900 --> 00:02:19.680
+<v Mani Selvam>Fixed. A month is thirty days. And the interest just builds up continuously, day by day, it's not in jumps.</v>
+
+35
+00:02:20.100 --> 00:02:21.900
+<v Latha Rao>A month is thirty days, interest accrues continuously. Got it.</v>
+
+36
+00:02:22.400 --> 00:02:29.680
+<v Mani Selvam>There's a toggle on each loan. Whether the day I actually hand over the money, whether that first day counts as a full period or not. Depends on the deal.</v>
+
+37
+00:02:30.100 --> 00:02:32.900
+<v Ravi Kumar>So a per loan flag, "count the start day", yes or no.</v>
+
+38
+00:02:32.900 --> 00:02:33.900
+<v Mani Selvam>Right.</v>
+
+39
+00:02:34.400 --> 00:02:40.680
+<v Mani Selvam>And when it's paid back, it's paid back in one go. On a date I pick. The principal plus whatever interest has built up, that all comes back into my position.</v>
+
+40
+00:02:41.100 --> 00:02:44.900
+<v Latha Rao>One single repayment on a chosen date, principal plus accrued interest returns to cash or gold.</v>
+
+41
+00:02:44.900 --> 00:02:45.900
+<v Mani Selvam>Yeah.</v>
+
+42
+00:02:46.400 --> 00:02:52.900
+<v Mani Selvam>Oh, important. I can't lend out more cash than I've actually got in hand. Or more gold than I'm holding. The app has to stop me.</v>
+
+43
+00:02:53.400 --> 00:02:56.900
+<v Ravi Kumar>So creating a loan that exceeds available cash or available stock gets blocked.</v>
+
+44
+00:02:56.900 --> 00:02:57.900
+<v Mani Selvam>Blocked, yeah.</v>
+
+45
+00:02:58.400 --> 00:03:01.900
+<v>Can a loan be partly repaid, or does it have to be the whole thing at once?</v>
+
+46
+00:03:02.400 --> 00:03:03.900
+<v Latha Rao>Good question. Mani?</v>
+
+47
+00:03:03.900 --> 00:03:11.680
+<v Mani Selvam>Hm. I don't know yet. For now, one repayment, the full thing, done. We can look at partial repayments later if I need it. Leave it for now.</v>
+
+48
+00:03:12.100 --> 00:03:14.900
+<v Latha Rao>Okay, I'll log partial loan repayment as not decided.</v>
+
+49
+00:03:15.400 --> 00:03:19.900
+<v José Álvarez>The interest side is clear enough for me to spec it out. I'll write it up and share it after.</v>
+
+50
+00:03:19.900 --> 00:03:21.900
+<v Latha Rao>Thanks José.</v>
+
+51
+00:03:21.900 --> 00:03:24.900
+<v Priya Menon>Nothing from me this week, I'll pick up the visuals once the flows settle.</v>
+
+52
+00:03:25.400 --> 00:03:29.900
+<v Latha Rao>Good. That's a solid list. Same time next week, we'll go through the write up.</v>
+
+53
+00:03:29.900 --> 00:03:32.900
+<v Mani Selvam>Works for me. Thanks everyone.</v>
+
+54
+00:03:32.900 --> 00:03:34.400
+<v Ravi Kumar>Thanks all.</v>

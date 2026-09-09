@@ -1,0 +1,50 @@
+Gold Manager — Discovery Call 2
+
+VIEW RECORDING - 2 mins (No highlights): https://fathom.video/share/7HgT2yLpQ9mZ4kR8wX3nBvC
+
+---
+
+0:01 - Mani Selvam
+Okay, I've got, uh, a few changes, and then a new bit, the loans.
+
+0:05 - Latha Rao
+Changes first. Go.
+
+0:08 - Mani Selvam
+The starting numbers, opening cash is fifteen lakh, opening gold's a hundred grams. The amount paid. Last week I said don't default it, prompt me every time. Change that, just default it to the full total.
+
+0:22 - Ravi Kumar
+So it flips, defaults to fully paid, you lower it when it's credit.
+
+0:24 - Mani Selvam
+Yeah. And the note field on a transaction, take it out. I won't use it.
+
+0:30 - Latha Rao
+Noted. Couple of things I just want to confirm haven't moved. The weighted average costing?
+
+0:36 - Mani Selvam
+Weighted average, no change. And you still can't ever sell past the stock, no change there either.
+
+0:42 - Latha Rao
+Great. Okay, loans.
+
+0:44 - Mani Selvam
+I lend cash, and sometimes gold. A cash loan, interest's per day. A gold loan, interest's per month. The interest is the principal over a reference amount, times the rate, times the number of periods that've gone by.
+
+0:59 - Ravi Kumar
+And a month is?
+
+1:00 - Mani Selvam
+Thirty days. And it builds up continuously, day by day, not in jumps. Each loan's got a toggle for whether the day I hand the money over counts as a full period. It's paid back in one go, on a date I pick, principal plus the interest that's built up, back into my position. And I can't lend more cash than I've got in hand, or more gold than I'm holding. Block it.
+
+1:25 - Unknown Speaker
+Can a loan be partly repaid, or is it always the whole thing at once?
+
+1:30 - Mani Selvam
+Hm. Don't know yet. For now it's one repayment, the full thing. We'll look at partial later.
+
+1:36 - José Álvarez
+The interest maths is clear my end, I'll write it up and send it round.
+
+1:41 - Latha Rao
+Good. Next week same time.

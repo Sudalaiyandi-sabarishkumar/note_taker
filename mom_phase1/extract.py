@@ -335,6 +335,13 @@ _UNDECIDED_RE = re.compile(
     r"|keep (?:it|this|that) in mind (?:for now)?|park(?:ed|ing)? (?:it|this)(?: for now)?"
     r"|revisit\b[^.?!]{0,30}\blater|defer(?:red)?\b[^.?!]{0,15}\b(?:to|until)|placeholder for now"
     r"|remains? (?:undecided|undetermined|open)(?!\s+question)"
+    # "one thing I haven't decided, whether ..." -- first person, comma before
+    # the wh-word; and bare deferral phrasings the arms above miss
+    r"|(?:one thing |the one thing )?i (?:haven'?t|have not) (?:yet )?(?:decided|worked out|figured out)"
+    r"|(?:don'?t|do not) know yet|not sure yet|haven'?t worked (?:it|that) out"
+    r"|leave (?:that|it|this)(?: one)? open|leave (?:that|it|this) for later"
+    r"|we'?ll (?:look at|revisit|come back to|circle back to|sort out|figure out|work out|decide)\b[^.?!]{0,45}\blater"
+    r"|for now[^.?!]{0,60}\b(?:later|down the line|in future)"
     r")\b",
     re.IGNORECASE,
 )
@@ -366,7 +373,9 @@ _HEDGE_RE = re.compile(
     r"not (?:yet )?(?:sure|decided|settled)|to be (?:decided|determined|confirmed)|"
     r"\btbd\b|open question|we disagree|we'?re not aligned|"
     r"under discussion|circle back on|revisit (?:this|that) later|"
-    r"we might want to|don'?t build (?:it|that) yet|keep (?:it|that) in mind for now)\b",
+    r"we might want to|don'?t build (?:it|that) yet|keep (?:it|that) in mind for now|"
+    r"i (?:haven'?t|have not) (?:yet )?decided|(?:don'?t|do not) know yet|"
+    r"leave (?:that|it|this)(?: one)? open|we'?ll look at [^.?!]{0,40} later)\b",
     re.IGNORECASE,
 )
 _SPEAKER_LINE_RE = re.compile(r"^(?:\[([^\]]+)\]\s*)?([^:]{1,40}):\s*(.+)$")
@@ -458,6 +467,81 @@ def _looks_like_requirement(text: str) -> bool:
     return len(words) >= 5 and bool(_HAS_VERBISH_RE.search(text))
 
 
+_DENSE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_SECOND_CLAUSE_RE = re.compile(
+    r",\s+(?:and|but|then|so|plus)\s+|\s*;\s*|\.\s+(?=[A-Z])", re.IGNORECASE)
+
+
+def _dense_sentence_pass(transcript_text, found, model, progress):
+    """Sub-clause recovery. A 7B routinely takes a turn that packs two or
+    three requirements into one utterance and returns only the first ("...rate
+    per gram, and an optional note. Total's always weight times rate, the
+    server does it" -> only the fields). One extra LLM call over the dense,
+    multi-clause sentences whose wording is only partly present in ``found``,
+    asking for a STATEMENT per distinct requirement. Additive: results carry
+    ``from_coverage`` so anything that can't ground verbatim is dropped."""
+    if os.environ.get("MOM_SENTENCE_PASS", "1") == "0":
+        return []
+    have_words = [_content_words(b.get("quote", "")) for b in found]
+    cands = []
+    for raw_line in transcript_text.splitlines():
+        m = _SPEAKER_LINE_RE.match(raw_line.strip())
+        body = m.group(3).strip() if m else raw_line.strip()
+        for sent in _DENSE_SPLIT_RE.split(body):
+            sent = sent.strip()
+            w = re.findall(r"[a-z0-9']+", sent.lower())
+            if len(w) < 12 or not _SECOND_CLAUSE_RE.search(sent):
+                continue
+            if not _looks_like_requirement(sent):
+                continue
+            sw = _content_words(sent)
+            if not sw:
+                continue
+            covered = max((len(sw & hw) / len(sw) for hw in have_words), default=0.0)
+            if covered >= 0.85:
+                continue  # already fully captured
+            if _is_logistics(sent) or _is_banter(sent):
+                continue
+            cands.append(sent)
+    if not cands:
+        return []
+    progress(f"  sub-clause pass ({len(cands)} dense sentence(s))...")
+    numbered = "\n".join(f"{i}. {s}" for i, s in enumerate(cands, 1))
+    prompt = f"""Each numbered line below is ONE sentence from a client call. Several
+pack MORE THAN ONE requirement into a single sentence (joined by "and", a
+comma, or a full stop).
+
+{numbered}
+
+For EVERY distinct requirement, rule, number, limit, or constraint stated in
+these lines, output one block -- including ones that share a sentence with
+another:
+
+## STATEMENT
+Feature: <a BROAD feature area, 1-2 plain words>
+Summary: <one plain sentence>
+Quote: "<the exact words from the line that state THIS requirement, verbatim>"
+Speaker: <"Unidentified speaker">
+Timestamp: <"not available">
+
+The Quote must be copied word-for-word from the line (a contiguous slice of
+it). One requirement per block. Skip reactions and scheduling. If a line
+truly states only one thing, still emit its block. Output nothing else."""
+    try:
+        raw = strip_think(chat(
+            [{"role": "system", "content": _SYSTEM},
+             {"role": "user", "content": prompt}],
+            model=model, show_progress=False, num_predict=1200))
+    except Exception:
+        return []
+    if raw.strip().upper().startswith("NO STATEMENTS"):
+        return []
+    blocks = parse_statement_blocks(raw)
+    for b in blocks:
+        b["from_coverage"] = True
+    return blocks
+
+
 _TS_PREFIX_RE = re.compile(r"^\[(\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)\]")
 
 
@@ -537,6 +621,10 @@ def extract_statements(transcript_text: str, known_features, model=None,
                 for b in cov_blocks:
                     if b["feature"] not in seen_features:
                         seen_features.append(b["feature"])
+
+    # Sub-clause recovery pass: one extra call over dense multi-requirement
+    # sentences the chunk passes only partly captured.
+    found.extend(_dense_sentence_pass(transcript_text, found, model, progress))
 
     spans = _candidate_spans(transcript_text)
     norm_spans = [_normalise(sp) for sp in spans]
@@ -1493,9 +1581,13 @@ _NARRATION_LEAD_RE = re.compile(
     r"defin\w+|establish\w+|determin\w+)\b",
     re.IGNORECASE,
 )
+# Leading discourse filler to drop from a quote-derived summary. "yes"/"no"
+# are stripped ONLY before a comma ("No, that's fine") -- a bare "No default"
+# / "No staff" is a real negation and must survive.
 _QUOTE_LEAD_FILLER_RE = re.compile(
-    r"^(?:so|okay|ok|yeah|yes|no|well|right|sure|and|but|also|actually|"
-    r"look|listen|hold on|i mean|you know)[,\s]+", re.IGNORECASE)
+    r"^(?:(?:so|okay|ok|yeah|well|right|sure|and|but|also|actually|"
+    r"look|listen|hold on|i mean|you know)[,\s]+|(?:yes|no)\s*,\s*)",
+    re.IGNORECASE)
 
 
 def _summary_from_quote(quote: str) -> str:
@@ -1509,18 +1601,52 @@ def _summary_from_quote(quote: str) -> str:
     if len(words) > 24:                       # keep it to the first clause-ish
         cut = re.split(r"(?<=[,;:])\s", q)
         q = cut[0] if cut and len(cut[0].split()) >= 6 else " ".join(words[:24])
-    q = q.rstrip(" .!?;:,") + "."
+    q = q.rstrip(" .!?;:,")
+    # A hard word-count cut can land on a function word ("... bills at") --
+    # drop any trailing glue words so the summary ends on something concrete.
+    while _DANGLING_TAIL_RE.search(q) and len(q.split()) > 4:
+        q = q.rsplit(" ", 1)[0].rstrip(" .!?;:,")
+    q = q + "."
     q = _destub(q[0].upper() + q[1:])
     return q
 
 
+_LEAD_NEGATION_RE = re.compile(
+    r"^(?:so|okay|ok|well|right|and|but|also|actually)?[,\s]*"
+    r"\b(no|not|never|without|cannot|can'?t|don'?t|doesn'?t|won'?t|"
+    r"shouldn'?t|isn'?t|aren'?t|no longer)\b",
+    re.IGNORECASE)
+_DANGLING_TAIL_RE = re.compile(
+    r"\b(?:at|to|the|of|it|a|an|and|or|in|on|for|with|by|that|this|"
+    r"is|are|be|as|from|into)\.?\s*$",
+    re.IGNORECASE)
+
+
+def _first_sentence(text: str) -> str:
+    parts = re.split(r"(?<=[.!?])\s+", (text or "").strip(), maxsplit=1)
+    return parts[0] if parts else (text or "")
+
+
 def fix_summary(summary: str, quote: str) -> str:
-    """Keep the model's summary unless it barely overlaps the quote's wording
-    or narrates the decision instead of stating it -- then rebuild it from
-    the quote. Never invents; only ever falls back to the client's own text."""
+    """Keep the model's summary unless it barely overlaps the quote's wording,
+    narrates the decision instead of stating it, drops a leading negation the
+    quote carries (turning "No default" into "Default"), or ends mid-clause --
+    then rebuild it from the quote. Never invents; only ever falls back to the
+    client's own text."""
     summary = (summary or "").strip()
     if not summary:
         return _summary_from_quote(quote)
+
+    # Negation integrity: the quote's first sentence opens with a negation and
+    # the summary's does not -- the model likely inverted the meaning.
+    q1 = _first_sentence(quote)
+    if _LEAD_NEGATION_RE.match(q1) and not _LEAD_NEGATION_RE.match(summary):
+        return _summary_from_quote(quote)
+    # Truncation: a summary that ends on a function word (". clears their bills
+    # at.", "the app blocks it, Save's dead, it.") lost its tail.
+    if _DANGLING_TAIL_RE.search(summary.rstrip()):
+        return _summary_from_quote(quote)
+
     sw = _content_words(summary)
     if not sw:
         return _summary_from_quote(quote)

@@ -1,0 +1,26 @@
+Gold Manager — Discovery Call 3
+
+VIEW RECORDING - 2 mins (No highlights): https://fathom.video/share/Kp9wR3nQ7yT2mL8xH4vBzD
+
+---
+
+0:01 - Mani Selvam
+Call three. Few refinements, then some new features. That open thing from call one, the opening balances locking. Decided. They stay editable, always, even with transactions in. That closes it. The rounding. We said cash two places, gold weight four. Change the gold one, four down to three.
+
+0:19 - Ravi Kumar
+So cash stays at two, gold weight goes to three decimals.
+
+0:21 - Mani Selvam
+Right. And the note field, put it back. I was wrong, I do use it for the bill numbers. The loan interest month, we said thirty days. Change it, make a month thirty one days.
+
+0:34 - Latha Rao
+Okay. Confirmations?
+
+0:35 - Mani Selvam
+Quick ones, no change. The login mani and one nine seven seven. The yellow on black. The total being weight times rate on the server. All unchanged. Then three on payments, two are confirming and one's a change in the middle. The paid, part paid, unpaid status, worked out from the payments, unchanged. The change, when a payment's more than what's owing, don't block it and make me redo it, just quietly cap it at the outstanding amount and take it. And payments never touching the stock or the profit, that's, obviously, unchanged. New. On the party page, a settle action, I put in one lump sum a person paid and it clears several of their bills at once. But it checks every bill first. If any one allocation's too big for its bill, the whole thing fails and nothing gets written. New, a one time job that marks every existing transaction as paid in full, and it's safe to run more than once. New, the transaction detail screen shows the whole record and lets me delete it, and a delete recomputes the stock from scratch. Not decided, whether I ever want a second login for an assistant. Don't build anything for it. Not now. And the big one, it has to feel trustworthy, the cash and the stock totals always have to reconcile.
+
+1:50 - Latha Rao
+Understood, we'll treat that as a principle and bring you concrete checks. Clear list, thanks Mani.
+
+1:54 - Mani Selvam
+Thanks all.

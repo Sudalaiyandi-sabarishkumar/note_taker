@@ -1,0 +1,81 @@
+WEBVTT
+
+1
+00:00:01.400 --> 00:00:05.900
+<v Mani Selvam>Okay, I've got, uh, a few changes, and then a new bit, the loans.</v>
+
+2
+00:00:05.900 --> 00:00:08.400
+<v Latha Rao>Changes first. Go.</v>
+
+3
+00:00:08.400 --> 00:00:13.680
+<v Mani Selvam>The starting numbers, opening cash is fifteen lakh, opening gold's a hundred grams.</v>
+
+4
+00:00:14.100 --> 00:00:21.680
+<v Mani Selvam>The amount paid. Last week I said don't default it, prompt me every time. Change that, just default it to the full total.</v>
+
+5
+00:00:22.100 --> 00:00:24.900
+<v Ravi Kumar>So it flips, defaults to fully paid, you lower it when it's credit.</v>
+
+6
+00:00:24.900 --> 00:00:29.680
+<v Mani Selvam>Yeah. And the note field on a transaction, take it out. I won't use it.</v>
+
+7
+00:00:30.100 --> 00:00:35.680
+<v Latha Rao>Noted. Couple of things I just want to confirm haven't moved. The weighted average costing?</v>
+
+8
+00:00:36.100 --> 00:00:41.680
+<v Mani Selvam>Weighted average, no change. And you still can't ever sell past the stock, no change there either.</v>
+
+9
+00:00:42.100 --> 00:00:44.900
+<v Latha Rao>Great. Okay, loans.</v>
+
+10
+00:00:44.900 --> 00:00:51.680
+<v Mani Selvam>I lend cash, and sometimes gold. A cash loan, interest's per day. A gold loan, interest's per month.</v>
+
+11
+00:00:52.100 --> 00:00:58.680
+<v Mani Selvam>The interest is the principal over a reference amount, times the rate, times the number of periods that've gone by.</v>
+
+12
+00:00:59.100 --> 00:01:00.900
+<v Ravi Kumar>And a month is?</v>
+
+13
+00:01:00.900 --> 00:01:05.680
+<v Mani Selvam>Thirty days. And it builds up continuously, day by day, not in jumps.</v>
+
+14
+00:01:06.100 --> 00:01:11.680
+<v Mani Selvam>Each loan's got a toggle for whether the day I hand the money over counts as a full period.</v>
+
+15
+00:01:12.100 --> 00:01:18.680
+<v Mani Selvam>It's paid back in one go, on a date I pick, principal plus the interest that's built up, back into my position.</v>
+
+16
+00:01:19.100 --> 00:01:24.680
+<v Mani Selvam>And I can't lend more cash than I've got in hand, or more gold than I'm holding. Block it.</v>
+
+17
+00:01:25.100 --> 00:01:29.680
+<v>Can a loan be partly repaid, or is it always the whole thing at once?</v>
+
+18
+00:01:30.100 --> 00:01:35.680
+<v Mani Selvam>Hm. Don't know yet. For now it's one repayment, the full thing. We'll look at partial later.</v>
+
+19
+00:01:36.100 --> 00:01:40.680
+<v José Álvarez>The interest maths is clear my end, I'll write it up and send it round.</v>
+
+20
+00:01:41.100 --> 00:01:43.400
+<v Latha Rao>Good. Next week same time.</v>

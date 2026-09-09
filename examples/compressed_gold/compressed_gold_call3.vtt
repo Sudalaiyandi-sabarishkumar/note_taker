@@ -1,0 +1,81 @@
+WEBVTT
+
+1
+00:00:01.900 --> 00:00:05.680
+<v Mani Selvam>Call three. Few refinements, then some new features.</v>
+
+2
+00:00:05.900 --> 00:00:12.680
+<v Mani Selvam>That open thing from call one, the opening balances locking. Decided. They stay editable, always, even with transactions in. That closes it.</v>
+
+3
+00:00:13.100 --> 00:00:18.680
+<v Mani Selvam>The rounding. We said cash two places, gold weight four. Change the gold one, four down to three.</v>
+
+4
+00:00:19.100 --> 00:00:21.900
+<v Ravi Kumar>So cash stays at two, gold weight goes to three decimals.</v>
+
+5
+00:00:21.900 --> 00:00:27.680
+<v Mani Selvam>Right. And the note field, put it back. I was wrong, I do use it for the bill numbers.</v>
+
+6
+00:00:28.100 --> 00:00:33.680
+<v Mani Selvam>The loan interest month, we said thirty days. Change it, make a month thirty one days.</v>
+
+7
+00:00:34.100 --> 00:00:35.900
+<v Latha Rao>Okay. Confirmations?</v>
+
+8
+00:00:35.900 --> 00:00:43.680
+<v Mani Selvam>Quick ones, no change. The login mani and one nine seven seven. The yellow on black. The total being weight times rate on the server. All unchanged.</v>
+
+9
+00:00:44.100 --> 00:00:47.900
+<v Mani Selvam>Then three on payments, two are confirming and one's a change in the middle.</v>
+
+10
+00:00:47.900 --> 00:00:52.680
+<v Mani Selvam>The paid, part paid, unpaid status, worked out from the payments, unchanged.</v>
+
+11
+00:00:53.100 --> 00:01:01.680
+<v Mani Selvam>The change, when a payment's more than what's owing, don't block it and make me redo it, just quietly cap it at the outstanding amount and take it.</v>
+
+12
+00:01:02.100 --> 00:01:06.680
+<v Mani Selvam>And payments never touching the stock or the profit, that's, obviously, unchanged.</v>
+
+13
+00:01:07.100 --> 00:01:14.680
+<v Mani Selvam>New. On the party page, a settle action, I put in one lump sum a person paid and it clears several of their bills at once.</v>
+
+14
+00:01:15.100 --> 00:01:21.680
+<v Mani Selvam>But it checks every bill first. If any one allocation's too big for its bill, the whole thing fails and nothing gets written.</v>
+
+15
+00:01:22.100 --> 00:01:28.680
+<v Mani Selvam>New, a one time job that marks every existing transaction as paid in full, and it's safe to run more than once.</v>
+
+16
+00:01:29.100 --> 00:01:35.680
+<v Mani Selvam>New, the transaction detail screen shows the whole record and lets me delete it, and a delete recomputes the stock from scratch.</v>
+
+17
+00:01:36.100 --> 00:01:42.680
+<v Mani Selvam>Not decided, whether I ever want a second login for an assistant. Don't build anything for it. Not now.</v>
+
+18
+00:01:43.100 --> 00:01:49.680
+<v Mani Selvam>And the big one, it has to feel trustworthy, the cash and the stock totals always have to reconcile.</v>
+
+19
+00:01:50.100 --> 00:01:54.680
+<v Latha Rao>Understood, we'll treat that as a principle and bring you concrete checks. Clear list, thanks Mani.</v>
+
+20
+00:01:54.680 --> 00:01:56.400
+<v Mani Selvam>Thanks all.</v>

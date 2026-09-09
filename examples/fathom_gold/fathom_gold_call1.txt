@@ -1,0 +1,56 @@
+Gold Manager — Discovery Call 1
+
+VIEW RECORDING - 3 mins (No highlights): https://fathom.video/share/aB3xK9mQ2pL7nR4tW8vYcD
+
+---
+
+0:02 - Mani Selvam
+Hello? Yeah, sorry, hi. Okay. So, this is the, the gold app.
+
+0:05 - Latha Rao
+Yep, we've got you. Ravi's on too.
+
+0:08 - Mani Selvam
+Right. So it's just me using it. One person. No staff, no, no other logins ever. One fixed login, username mani, password one nine seven seven. No sign up, no forgot password.
+
+0:21 - Ravi Kumar
+Got it. And what's it actually tracking.
+
+0:23 - Mani Selvam
+My stock. It's all one pool, in grams, and one weighted average cost per gram. That's the number I run on.
+
+0:32 - Ravi Kumar
+Walk me through a buy.
+
+0:33 - Mani Selvam
+On a buy the new average is old grams times old average, plus the grams bought times the rate, over the total grams after. Then quantity goes up by what I bought.
+
+0:43 - Ravi Kumar
+And a sale.
+
+0:44 - Mani Selvam
+Sale, the average doesn't move. Grams come off. And the profit is the grams sold times the sale rate minus the average cost. Realised profit's just, all of those added up. And the stock's never stored. It's always worked out by replaying every transaction in date order, from the start. So it can't drift. One hard rule, I can never sell more than I'm holding. If a sale's over the stock, the app blocks it, Save's dead, it tells me what's available.
+
+1:09 - Ravi Kumar
+What's on a transaction.
+
+1:11 - Mani Selvam
+Buy or sell, the date, the party's name, weight in grams, rate per gram, and, uh, an optional note. Total's always weight times rate, the server does it, I don't type it. Round the money to two decimals and the gold weight to four decimals. History's a list, newest first, each line shows the stock after it. I search it by name or the note, and by a date range.
+
+1:32 - Latha Rao
+Payments. Everything paid up front?
+
+1:33 - Mani Selvam
+Ha, no. Full, or part now part later, or nothing now. Both directions. So each transaction tracks paid and due, and keeps the list of instalments. And payments never touch the stock or the profit. That's locked at the time of the trade, whenever the cash turns up is separate.
+
+1:49 - Latha Rao
+The amount paid box, should it default to the full amount?
+
+1:53 - Mani Selvam
+No default. Prompt me for the amount paid every single time. I'd rather type it. Status is paid, part paid, or unpaid, worked out from the payments, not a button. And a new payment can't be more than what's still owing on that bill. Every party gets their own page, all their bills, and one net number, receivable if they owe me, payable if I owe them. Names come from a dropdown of ones I've used, and matching ignores case, so Sekar and sekar are one person. I start with an opening cash amount and an opening gold amount in grams, both editable. Cash and gold in stock flow through everything after that. Oh, look and feel, it's yellow on black. Gold on a dark background. That's it. One thing I haven't decided, whether the opening balances lock once there's transactions in. Leave that open. And honestly, more than anything, it just has to feel fast and calm. I do this tired at the end of the day.
+
+2:44 - Latha Rao
+Understood, that's a principle not a spec line. Good first pass, same time next week.
+
+2:44 - Mani Selvam
+Thanks both.

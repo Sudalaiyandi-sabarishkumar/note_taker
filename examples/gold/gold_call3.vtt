@@ -1,0 +1,197 @@
+WEBVTT
+
+1
+00:00:01.900 --> 00:00:05.900
+<v Latha Rao>Morning Mani. How was, uh, how was the festival rush, you survive it?</v>
+
+2
+00:00:05.900 --> 00:00:11.680
+<v Mani Selvam>Barely. Busiest week of the year. But it's done, so I've actually got headspace for this now.</v>
+
+3
+00:00:12.100 --> 00:00:15.900
+<v Latha Rao>Good. Okay, same as before, changes first, then new bits. What've you got.</v>
+
+4
+00:00:16.400 --> 00:00:23.680
+<v Mani Selvam>First, that open thing from the first call. The opening balances, whether they lock. I've decided. They stay editable. Always. Even when there's transactions in there.</v>
+
+5
+00:00:24.100 --> 00:00:27.900
+<v Latha Rao>Okay so that closes that one. Opening cash and opening gold, editable at any time, full stop.</v>
+
+6
+00:00:27.900 --> 00:00:28.900
+<v Mani Selvam>Yeah, done, no more umming about it.</v>
+
+7
+00:00:29.400 --> 00:00:35.680
+<v Mani Selvam>Next. The rounding. We said cash to two places and the gold weight to four places. Change the gold one. Make it three places, not four.</v>
+
+8
+00:00:36.100 --> 00:00:38.900
+<v Ravi Kumar>So gold weight rounding goes from four decimal places to three. Cash stays at two?</v>
+
+9
+00:00:38.900 --> 00:00:42.900
+<v Mani Selvam>Cash stays at two, yeah. Just the gold weight, four down to three.</v>
+
+10
+00:00:43.400 --> 00:00:49.680
+<v Mani Selvam>The note field. Last week I told you to rip it out. Put it back. I was wrong, I do use it, for the bill numbers off the paper receipts.</v>
+
+11
+00:00:50.100 --> 00:00:53.900
+<v Latha Rao>Ha, okay. Note field is back on the transaction, optional, like it was originally.</v>
+
+12
+00:00:53.900 --> 00:00:54.900
+<v Mani Selvam>Yeah. Sorry.</v>
+
+13
+00:00:55.400 --> 00:01:00.680
+<v Mani Selvam>The loan interest. We said a month is thirty days. Change that. A month should be thirty one days.</v>
+
+14
+00:01:01.100 --> 00:01:04.900
+<v Ravi Kumar>Hm, okay. So for gold loan interest, one month is now thirty one days instead of thirty.</v>
+
+15
+00:01:04.900 --> 00:01:09.680
+<v Mani Selvam>Right. I did the sums on a couple of my actual loans and thirty was, it wasn't matching what I'd agreed with people. Thirty one.</v>
+
+16
+00:01:10.100 --> 00:01:11.900
+<v Ravi Kumar>Understood, thirty one it is.</v>
+
+17
+00:01:12.400 --> 00:01:15.900
+<v Latha Rao>Any others? Or shall we do the confirmations.</v>
+
+18
+00:01:15.900 --> 00:01:22.680
+<v Mani Selvam>Few quick confirmations. The login, mani and one nine seven seven, that's not changing. The gold on black, not changing.</v>
+
+19
+00:01:23.100 --> 00:01:28.680
+<v Mani Selvam>And the total on a trade being weight times rate, done on the server, I never type it, that's, yeah, unchanged.</v>
+
+20
+00:01:29.100 --> 00:01:31.900
+<v Latha Rao>Great, all three just restated, no change.</v>
+
+21
+00:01:32.400 --> 00:01:35.900
+<v Mani Selvam>Then three things on the payments, quick. Two are just confirming, one's a change, in the middle.</v>
+
+22
+00:01:35.900 --> 00:01:36.900
+<v Ravi Kumar>Go for it.</v>
+
+23
+00:01:36.900 --> 00:01:41.680
+<v Mani Selvam>The status, paid, part paid, unpaid, worked out from the payments. Unchanged.</v>
+
+24
+00:01:42.100 --> 00:01:51.680
+<v Mani Selvam>The change. When I add a payment that's bigger than what's still owing, don't block it and make me redo it. Just, quietly cap it at the outstanding amount and take that.</v>
+
+25
+00:01:52.100 --> 00:01:57.900
+<v Ravi Kumar>Okay so that's different from before. Before it rejected an overpayment. Now it silently clamps it down to the outstanding and accepts it.</v>
+
+26
+00:01:57.900 --> 00:02:03.680
+<v Mani Selvam>Yeah, less annoying. And the third one, payments never touching the stock or the profit, that's unchanged, obviously.</v>
+
+27
+00:02:04.100 --> 00:02:06.900
+<v Latha Rao>Got it. Middle one's the real change, the two either side are restates.</v>
+
+28
+00:02:07.400 --> 00:02:10.900
+<v Latha Rao>Okay. New features. What's on the list.</v>
+
+29
+00:02:11.400 --> 00:02:19.680
+<v Mani Selvam>There's a settle action on the party page. I put in the lump sum a person paid, once, and it clears several of their bills in one go.</v>
+
+30
+00:02:20.100 --> 00:02:27.680
+<v Mani Selvam>But, and this matters, it checks every single bill first before it writes anything. If any one allocation is too big for its bill, the whole thing fails and nothing gets saved.</v>
+
+31
+00:02:28.100 --> 00:02:33.900
+<v Ravi Kumar>So it's all or nothing. Validate every allocation up front, and if one's invalid, write none of them.</v>
+
+32
+00:02:33.900 --> 00:02:34.900
+<v Mani Selvam>Exactly.</v>
+
+33
+00:02:35.400 --> 00:02:43.680
+<v Mani Selvam>Second thing. I've got years of old trades from before I'm tracking payments properly. I want a one time job that marks every existing transaction as paid in full.</v>
+
+34
+00:02:44.100 --> 00:02:46.900
+<v Mani Selvam>And it has to be safe to run twice. If I run it again by accident it shouldn't break anything.</v>
+
+35
+00:02:47.400 --> 00:02:51.900
+<v Latha Rao>A one off migration, mark all existing transactions paid in full, idempotent, safe to re run.</v>
+
+36
+00:02:51.900 --> 00:02:52.900
+<v Mani Selvam>Yeah.</v>
+
+37
+00:02:53.400 --> 00:03:00.680
+<v Mani Selvam>Third. On a transaction's detail screen I want to see the whole record, and be able to delete it. And when I delete one, the stock has to recompute from scratch.</v>
+
+38
+00:03:01.100 --> 00:03:05.900
+<v Ravi Kumar>Right, because the stock's a replay anyway, so a delete just, it re runs the whole thing without that row.</v>
+
+39
+00:03:05.900 --> 00:03:06.900
+<v Mani Selvam>Right.</v>
+
+40
+00:03:07.400 --> 00:03:13.900
+<v Mani Selvam>Oh, one more, and I'm not decided. Whether I ever want a second login, for an assistant, if I hire someone.</v>
+
+41
+00:03:13.900 --> 00:03:18.680
+<v Mani Selvam>Don't build anything for it. Just, leave it. It's a maybe. Not now.</v>
+
+42
+00:03:19.100 --> 00:03:21.900
+<v Latha Rao>Okay, second user login, logged as undecided, nothing built.</v>
+
+43
+00:03:22.400 --> 00:03:29.680
+<v Mani Selvam>And the big picture thing. It has to feel trustworthy. The numbers always have to reconcile, the cash and the stock both. If I can't trust the totals it's useless to me.</v>
+
+44
+00:03:30.100 --> 00:03:36.900
+<v Latha Rao>Understood, and I hear you, but that's a principle rather than a spec line. We'll bring you concrete reconciliation checks rather than build to "trustworthy".</v>
+
+45
+00:03:36.900 --> 00:03:38.900
+<v Mani Selvam>Yeah, that's fine. As long as it's front of mind.</v>
+
+46
+00:03:39.400 --> 00:03:41.900
+<v Ravi Kumar>That's a clear list. Anything else before we wrap?</v>
+
+47
+00:03:41.900 --> 00:03:43.900
+<v Mani Selvam>No, that's me done. That was a big one.</v>
+
+48
+00:03:43.900 --> 00:03:47.900
+<v Latha Rao>It was. Updated notes tomorrow. Thanks everyone, talk next week.</v>
+
+49
+00:03:47.900 --> 00:03:49.400
+<v Mani Selvam>Thanks all. Bye.</v>
