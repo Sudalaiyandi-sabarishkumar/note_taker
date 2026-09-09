@@ -1,0 +1,38 @@
+Aisha Kapoor: Week two. Priya, Kofi sent the notes and a data model on Friday, thanks for that.
+Priya Raman: Of course. What's changed since last week?
+Ravi Menon: A few things. First, the auto-approve threshold. Raise it from twenty-five dollars to fifty dollars.
+Priya Raman: So expenses under fifty dollars are auto-approved now, up from twenty-five. Any reason?
+Lena Ortiz: Volume. The managers were drowning in tiny approvals and nothing under fifty ever gets questioned anyway.
+Priya Raman: Understood, fifty is the new auto-approve line. Next change?
+Lena Ortiz: Reimbursement. We're moving off payroll. Approved expenses should be paid by direct bank transfer within three business days of approval.
+Priya Raman: That's a real change. No longer next pay cycle through payroll, now a direct transfer inside three business days. Noted.
+Ravi Menon: To be clear, manager approval is still required for anything over the auto-approve line. No change there.
+Priya Raman: Confirmed, manager approval unchanged for expenses above the threshold.
+Kofi Mensah: Got it. Anything new rather than changed?
+Ravi Menon: Yes. Add a mileage category for people driving their own cars to client sites.
+Priya Raman: A new category, mileage, alongside travel, meals, supplies, and software.
+Lena Ortiz: There's also something we're still arguing about internally. We might want to cap software expenses on their own, separate from the overall monthly limit.
+Priya Raman: So possibly a per-category cap for software, distinct from the five hundred a month. Is that a firm requirement or still under discussion?
+Lena Ortiz: Still under discussion. Don't build it yet, but keep it in mind.
+Priya Raman: I'll flag it as an open question rather than a requirement. Anything else?
+Ravi Menon: One more. Employees should be able to bulk upload expenses from a CSV file, for people coming back from long trips with twenty receipts.
+Priya Raman: Bulk upload via CSV, understood. That's a new capability.
+Kofi Mensah: How big could those CSV files get?
+Ravi Menon: A few hundred rows at most. Nothing huge.
+Priya Raman: Noted. A couple of follow-ups from last week. On the edit rule, you said pending expenses can be edited. Does editing an amount send it back for approval?
+Lena Ortiz: If the amount goes up, yes, it re-enters approval. If it only goes down, it can stay approved.
+Priya Raman: So an increase re-triggers approval, a decrease does not. Good clarification.
+Ravi Menon: Also, the five business day approval SLA. We want a reminder email to the manager on day three if they haven't acted.
+Priya Raman: A day-three reminder email to the manager before the day-five escalation. Noted.
+Lena Ortiz: And the rejection email to the employee should include the manager's written reason, not just say rejected.
+Priya Raman: Understood, the rejection notification carries the reason text. Anything else?
+Ravi Menon: That's it for changes and additions this week.
+Priya Raman: Kofi, does the direct transfer change affect your timeline much?
+Kofi Mensah: A bit, we'll need a payments provider integration. Honestly it makes my next sprint busier, but it's the right call.
+Priya Raman: Understood. We'll scope that separately. Lena, Ravi, anything from finance before we wrap?
+Lena Ortiz: Just that quarter end is coming, so I may be slow to respond next week.
+Priya Raman: No problem. We'll keep things moving on our side.
+Aisha Kapoor: Good session. Same time next week works?
+Ravi Menon: Works for us.
+Lena Ortiz: See you then.
+Priya Raman: Thanks everyone, talk next week.

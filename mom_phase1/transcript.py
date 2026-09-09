@@ -13,7 +13,8 @@ _CUE_NUMBER_RE = re.compile(r"^\d+$")
 _TIMESTAMP_RE = re.compile(
     r"^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}"
 )
-_VOICE_TAG_RE = re.compile(r"<v\s+([^>]+)>(.*?)</v>", re.DOTALL)
+_VOICE_TAG_RE = re.compile(r"<v\b\s*([^>]*)>(.*?)</v>", re.DOTALL)
+_STRIP_TAGS_RE = re.compile(r"<[^>]+>")
 
 
 def _parse_vtt(raw: str) -> str:
@@ -21,18 +22,22 @@ def _parse_vtt(raw: str) -> str:
     pending_start = None
     for line in raw.splitlines():
         line = line.strip()
-        if not line or line == "WEBVTT" or _CUE_NUMBER_RE.match(line):
+        if not line or line.upper().startswith("WEBVTT") or _CUE_NUMBER_RE.match(line):
             continue
         if _TIMESTAMP_RE.match(line):
             pending_start = line.split("-->")[0].strip()
             continue
+        prefix = f"[{pending_start}] " if pending_start else ""
         m = _VOICE_TAG_RE.search(line)
         if m:
-            speaker, text = m.group(1).strip(), m.group(2).strip()
-            prefix = f"[{pending_start}] " if pending_start else ""
+            speaker = m.group(1).strip() or "Unidentified speaker"
+            text = _STRIP_TAGS_RE.sub("", m.group(2)).strip()
             lines.append(f"{prefix}{speaker}: {text}")
         else:
-            lines.append(line)
+            text = _STRIP_TAGS_RE.sub("", line).strip()
+            if text:
+                lines.append(f"{prefix}Unidentified speaker: {text}"
+                             if prefix else text)
     return "\n".join(lines)
 
 
@@ -52,17 +57,28 @@ def load_transcript(path: str):
     return text, None
 
 
-def chunk_transcript(text: str, max_chars: int = 5000):
-    """Split on line boundaries (whole speaker turns) so a chunk never cuts
-    a sentence -- the model must be able to quote verbatim from what it
-    sees. A real hour-long call is many chunks; that is the normal path."""
+def chunk_transcript(text: str, max_chars: int = 2500, overlap_lines: int = 2):
+    """Split on line boundaries (whole speaker turns) so a chunk never cuts a
+    sentence -- the model must be able to quote verbatim from what it sees.
+
+    Chunks are kept small (a 7B extracts more completely from a short, dense
+    span than from a long one), and each chunk repeats the last
+    ``overlap_lines`` lines of the previous one so a requirement stated right
+    at a boundary is not lost. Duplicate statements from the overlap are
+    removed downstream by normalised-quote de-dup.
+    """
+    lines = [ln for ln in text.splitlines()]
+    if sum(len(ln) + 1 for ln in lines) <= max_chars:
+        return ["\n".join(lines)] if lines else [text]
+
     chunks, current, current_len = [], [], 0
-    for line in text.splitlines():
+    for line in lines:
         if current and current_len + len(line) + 1 > max_chars:
-            chunks.append("\n".join(current))
-            current, current_len = [], 0
+            chunks.append(current)
+            current = current[-overlap_lines:] if overlap_lines else []
+            current_len = sum(len(x) + 1 for x in current)
         current.append(line)
         current_len += len(line) + 1
-    if current:
-        chunks.append("\n".join(current))
-    return chunks or [text]
+    if current and (not chunks or current[overlap_lines:]):
+        chunks.append(current)
+    return ["\n".join(c) for c in chunks] or [text]

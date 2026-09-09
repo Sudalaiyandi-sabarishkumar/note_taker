@@ -1,0 +1,337 @@
+📝 Notes 
+
+Sep 1, 2026 
+
+Amazon Curated Storefront — Discovery Call 1 
+
+Invited claire.dorsey@amazon.com meera.raghavan@northbeamlabs.com arjun.menon@northbeamlabs.com 
+
+Attachments Amazon Curated Storefront — Discovery Call 1 Notes by Gemini 
+
+Meeting records Transcript 
+
+Summary 
+
+Team finalised the scope for a two-part commerce platform covering a customer storefront and an internal administration application. 
+
+Platform structure agreed 
+
+The engagement will deliver a responsive customer website alongside an administrative application for the category operations team. Customer authentication will be passwordless using mobile number verification, while administrators will authenticate with email and password credentials. 
+
+Catalogue and inventory management 
+
+Stock will be managed within the admin application, with the category operations team of 50 users maintaining product listings and order records. The initial launch targets the India market with rupee pricing. 
+
+Timeline and deferred items 
+
+A demonstrable version is required within approximately ten weeks for a leadership review. Payment processing and single sign-on integration were deferred to later phases, and wishlist functionality was explicitly excluded. 
+
+Decisions 
+
+Aligned 
+
+Two-part platform scope confirmed The engagement covers a customer-facing responsive website for product browsing and purchase, plus an internal admin application for managing product listings, stock, and orders. 
+
+Authentication approach settled Customers will sign up and log in using mobile number with OTP verification and no password. Administrators will use email and password. 
+
+India-first launch The initial release targets the India market only, with pricing in rupees. 
+
+Shelved 
+
+SSO integration deferred Internal single sign-on for the admin application is out of scope for phase one and may be revisited later. 
+
+Wishlist functionality excluded The stakeholder confirmed wishlists should not be built despite anticipated user requests. 
+
+We’ve updated the Decisions section using your feedback. 
+
+Let us know what you think: Helpful or Not Helpful 
+
+Next steps 
+
+[Claire Dorsey] Confirm Inventory Source: Check internally whether stock is owned by the warehouse system or the admin application. 
+
+[Claire Dorsey] Payment Options: Confirm accepted payment methods with the finance team. 
+
+[Arjun Menon] Share Questions: Send a consolidated question list ahead of the next session. 
+
+[Meera Raghavan] Schedule Follow-up: Book a longer working session for next week. 
+
+Details 
+
+Engagement Framing: Claire Dorsey opened by noting she had limited time and would walk through the concept at a high level, with detail to follow in subsequent sessions (00:00:41). Meera Raghavan introduced Arjun Menon as the business analyst assigned to the engagement (00:00:19). 
+
+Customer Website Scope: The customer-facing side is a website listing products which customers can browse and purchase directly. Claire Dorsey confirmed this will be responsive web only with no native mobile application in the initial phase (00:03:12) (00:11:47). 
+
+Customer Authentication: Customers sign up using their mobile number and receive a one-time code, with no password and no email address collected at signup (00:04:26). Arjun Menon confirmed the flow is OTP-based (00:04:51). 
+
+Admin Application Scope: The admin application will allow the category operations team to add and edit product listings, manage stock levels, and manage order records (00:06:08). Claire Dorsey used the term “bookings” interchangeably with orders during the discussion (00:06:44). 
+
+Admin Authentication: In response to a question from Arjun Menon, Claire Dorsey confirmed administrators will authenticate with email and password rather than the mobile OTP flow used by customers, as the admin users are internal staff (00:08:33). Integration with internal single sign-on was deferred beyond phase one (00:09:05). 
+
+Admin User Volume: The category operations team using the admin application numbers approximately 50 people (00:09:52). 
+
+Launch Market and Pricing: The initial launch covers India only, with pricing displayed in rupees (00:12:30). 
+
+Inventory Source of Truth: Claire Dorsey initially described stock as something the admin team would view and update directly, later noting that the warehouse system may be the authoritative source and that she would confirm internally (00:06:08) (00:16:22). 
+
+Catalogue Size: The catalogue was described as a few hundred SKUs initially, potentially reaching a couple of thousand by go-live (00:14:05). 
+
+Payment Processing: Payment methods were raised but not resolved, with Claire Dorsey parking the topic pending a conversation with the finance team (00:18:11). 
+
+Timeline Expectation: A working version is expected in approximately ten weeks to support a leadership review (00:20:44). 
+
+Session Close: Claire Dorsey closed by noting the discussion was a glimpse of the overall scope and that remaining areas would be covered in upcoming calls (00:23:30). 
+
+You should review Gemini’s notes to make sure they’re accurate. Get tips and learn how Gemini takes notes 
+
+How is the quality of these specific notes?* Take a short survey to let us know your feedback, including how helpful the notes were for your needs.* 
+
+📖 Transcript 
+
+Sep 1, 2026 
+
+Amazon Curated Storefront — Discovery Call 1 - Transcript 
+
+00:00:04 
+
+Meera Raghavan: Claire, can you hear us? 
+
+Claire Dorsey: Yeah, I can hear you. Can you see my 
+
+Meera Raghavan: Yes, we 
+
+Claire Dorsey: Camera? 
+
+Meera Raghavan: Can see you. Perfect. 
+
+00:00:19 
+
+Meera Raghavan: Uh, thanks for making the time. This is mostly an introductions call from our side. This is Arjan, he’s the BA who’ll be on this engagement with us. 
+
+Claire Dorsey: Hi. 
+
+Arjun Menon: Hi Claire. Good to meet you. 
+
+00:00:41 
+
+Claire Dorsey: Good to meet you both. Look, I have about 20 5 minutes and then I have to jump into another thing. I know thats not much for a first call. 
+
+Meera Raghavan: That’s fine. 
+
+Claire Dorsey: Maybe I’ll just talk through what we’re thinking at a high level and you stop me wherever it doesn’t make sense. 
+
+Meera Raghavan: Yea, please. 
+
+00:01:15 
+
+Claire Dorsey: OK. So, the context is we have a category where we want a more curated experience than what you get on the main site. Think of it as a separate storefront. Different look, much smaller selection, hand picked. 
+
+Claire Dorsey: And thats the whole reason this exists as a separate thing rather than us just doing it inside the existing setup. 
+
+Arjun Menon: Understood. 
+
+00:02:03 
+
+Claire Dorsey: There are two pieces to it. There’s a website, customer facing, where we list the products. And then there’s an admin side, which is an app for our team to manage all of it. 
+
+Claire Dorsey: Thats it. That’s the whole thing at the highest level. 
+
+Meera Raghavan: OK, two applications. 
+
+Claire Dorsey: Two applications, yea. 
+
+00:03:12 
+
+Claire Dorsey: On the website, customers land, they see the products listed. They can look at a product, and they can buy it. That’s the flow. It’s not complicated. 
+
+Arjun Menon: And is that 
+
+Claire Dorsey: Sorry? 
+
+Arjun Menon: No, go ahead, sorry. 
+
+Claire Dorsey: No, go on. 
+
+Arjun Menon: I was going to ask about the buying flow but let’s, let’s come back to it. 
+
+00:04:26 
+
+Claire Dorsey: The one thing I do want to be specific about is signup. The customer signs up with their mobile number. That’s it. No email, no password. 
+
+Meera Raghavan: Mm. 
+
+Claire Dorsey: We’ve seen the drop off on email and password signup in this category and it’s, it’s bad. Mobile number only. 
+
+00:04:51 
+
+Arjun Menon: Sorry, when you say signs up with mobile number, is that an OTB flow? They enter the number, they get a code? 
+
+Claire Dorsey: Yeah, OTP. Number, code, they’re in. 
+
+Arjun Menon: And there’s no password at all for the customer. Not even optional. 
+
+Claire Dorsey: No password for the customer. Every time they come back, its the number and a code. 
+
+Arjun Menon: Okay. That’s clear. 
+
+00:06:08 
+
+Claire Dorsey: So then the admin side. This is for our category ops team. They need to do product listing, so adding products, editing them, taking them down. 
+
+Claire Dorsey: Stock. So they should be able to see the stock and update it. 
+
+Claire Dorsey: And bookings. Managing the bookings that come through. 
+
+00:06:44 
+
+Arjun Menon: When you say bookings, uh, do you mean orders? Or is something being reserved or scheduled? 
+
+Claire Dorsey: Uh, orders. Sorry, I keep saying bookings because internally the 
+
+Arjun Menon: No, no. 
+
+Claire Dorsey: Team calls them that. Yeah, orders. Mostly orders. 
+
+Arjun Menon: Mostly. 
+
+Claire Dorsey: We can, will get in to that another time. 
+
+00:07:38 
+
+Meera Raghavan: And the admin app, is that a web application as well, or 
+
+Claire Dorsey: Web. 
+
+Meera Raghavan: Web. Okay. 
+
+Claire Dorsey: Web is fine. Nobodys asking for it on a phone. 
+
+00:08:33 
+
+Arjun Menon: Quick one on the admin app. What’s the login method there? Is it the same mobile number and OTP, or something different? 
+
+Claire Dorsey: No, that one’s email and password. It’s our internal team, so email and password is fine there. 
+
+Arjun Menon: Email and password. OK. 
+
+00:09:05 
+
+Arjun Menon: Would you want that going through your internal single sign on? Rather than us holding credentials. 
+
+Claire Dorsey: Uh, not for phase one. Maybe later. Let’s keep it simple to start, email and password. 
+
+Meera Raghavan: We could probably put cognitive in front of it and then the SSO piece becomes easier to add later, but, we can look at that when we get there. 
+
+Claire Dorsey: Yea, whatever’s easiest for you on that. 
+
+00:09:52 
+
+Arjun Menon: And how many people would be using the admin app? 
+
+Claire Dorsey: Uh, right now around 50 people in the category ops team. It’s not a big group. 
+
+Arjun Menon: Okay. 
+
+00:11:47 
+
+Arjun Menon: Coming back to the customer side. Is that web only, or do you want a native app as ? 
+
+Claire Dorsey: Web only. Responsive web, it has to work properly on a phone browser, thats, uh, that’s where most of the traffic will be. 
+
+Claire Dorsey: But no app store. Not for now. 
+
+Meera Raghavan: Understood. 
+
+00:12:30 
+
+Arjun Menon: And which market is this launching in? 
+
+Claire Dorsey: India first. So rupees, in R pricing, India only for now. 
+
+Arjun Menon: India only. Right. 
+
+Claire Dorsey: The rest is a later conversation. 
+
+00:14:05 
+
+Meera Raghavan: What sort of catalogue size are we talking about? 
+
+Claire Dorsey: Small. It’s a curated thing, so, a few hundred skews to begin with. 
+
+Meera Raghavan: Okay. 
+
+Claire Dorsey: Could be a couple of thousand by go live, honestly. It depends how many brands we sign. But small. 
+
+00:16:22 
+
+Claire Dorsey: Uh, actually, let me flag something on stock. I said the team would update stock in the admin app. 
+
+Meera Raghavan: Mm hm. 
+
+Claire Dorsey: Our warehouse system is probably the real source for stock. The admin app might be reading it and not letting anyone change it. I need to check that internally before you build anything around it. 
+
+Arjun Menon: Thats a useful flag, thank you. That changes quite a lot on our side. 
+
+Claire Dorsey: Yeah. Let me come back to you on that one. 
+
+00:18:11 
+
+Arjun Menon: On the purchase flow, what payment methods do you need to support? 
+
+Claire Dorsey: The usual. Whatever’s standard. 
+
+Arjun Menon: We’ll need to be a bit more specific than that eventually. 
+
+Claire Dorsey: No, I know. Payment I generally need to check with our finance side, there are constraints there that I don’t fully understand. Let’s park payment. 
+
+Arjun Menon: Parked. 
+
+00:19:30 
+
+Claire Dorsey: One thing I’ll say now to save you time later. People will ask for wishlists. Every stakeholder I’ve spoken to has asked for wishlists. 
+
+Claire Dorsey: Don’t build wishlists. 
+
+Meera Raghavan: Noted. 
+
+Claire Dorsey: Maybe someday. Not now. 
+
+00:20:44 
+
+Meera Raghavan: Can I ask about timeline? What are you working towards? 
+
+Claire Dorsey: There’s a leadership review that I need something in front of. Thats roughly ten weeks out. 
+
+Claire Dorsey: It doesn’t have to be everything. But it has to be a real thing that works, not a, uh, not a prototype. 
+
+Meera Raghavan: Ten weeks. OK, thats useful to know now rather than later. 
+
+00:22:15 
+
+Arjun Menon: One more on signup. What should happen if someone tries to sign up with a number that’s already 
+
+Claire Dorsey: Sorry, im going to have to 
+
+Arjun Menon: Oh, of course. 
+
+Claire Dorsey: I’ve got about a minute. 
+
+00:23:30 
+
+Claire Dorsey: Look, this is a glimpse. I know its incomplete. There’s a lot I havent covered and I’m sure you have a long list of questions. 
+
+Arjun Menon: We do, yea. 
+
+Claire Dorsey: Send them over and let’s do a longer session next week where we can actually go through them proper. I’ll pull in someone from ops as, they’ll know the admin side better than me. 
+
+Meera Raghavan: That would help a lot. 
+
+00:24:12 
+
+Claire Dorsey: Okay. Thanks both, sorry to rush. 
+
+Meera Raghavan: No, this was useful. Thanks Claire. 
+
+Arjun Menon: Thanks Claire. 
+
+Claire Dorsey: Bye. 

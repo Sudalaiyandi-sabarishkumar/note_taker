@@ -9,5 +9,9 @@ venv/
 # client content never goes in git -- Phase 1 output lives here
 knowledge/
 
-# example run output
+# example / scratch run output
 example_knowledge/
+lms_knowledge/
+*_knowledge/
+ab_*/
+combined_knowledge/

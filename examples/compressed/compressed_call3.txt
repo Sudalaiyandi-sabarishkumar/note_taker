@@ -1,0 +1,23 @@
+Maya Chen: Call three — before we dive in, congrats on the new hire, Owen.
+Owen Blake: Thanks, she starts Monday. Okay, dispatch first — extend the delivery radius to 8 kilometers, but only in suburban zones. Urban stays at 5.
+Leo Tanaka: So it's conditional, 8 kilometers just for suburbs.
+Owen Blake: Right. Also, remember that weekend-SLA question from call one? Ops and finance agreed: weekend orders now follow the same SLA tiers as weekdays. No separate treatment.
+Maya Chen: Good, that closes the open item. Devon, training?
+Devon Cole: A few structural things. Admins can bundle courses into an ordered learning path — course two stays locked until course one is complete.
+Devon Cole: Also, a course can require a prerequisite course before a courier is even allowed to enroll.
+Devon Cole: And publishing: an instructor builds a course in draft, but an admin has to review and publish it before couriers can see it. Instructors can't publish their own courses.
+Leo Tanaka: What about the certification exam, any identity checks?
+Devon Cole: Yes, actually — the final certification exam needs webcam proctoring to verify it's really the courier taking it.
+Devon Cole: Two more, lighter ones. Couriers earn cosmetic badges for completion streaks and finishing early, no functional unlocks.
+Devon Cole: And instructor-led cohort sessions can have a capacity cap. Once it's full, additional couriers join a waiting list and get a spot automatically when one opens up.
+Maya Chen: Great range there. Farah, expense updates?
+Farah Idris: Couriers coming back from long routes want to submit a batch of receipts at once. Add bulk upload from a CSV file, a few hundred rows at most.
+Farah Idris: Bigger one — the category list shouldn't be fixed anymore. A finance admin should be able to add, rename, or remove categories themselves, no engineering release needed.
+Farah Idris: Same idea for the mileage reimbursement rate — it should be a setting a finance admin can update, not something hardcoded in the app.
+Farah Idris: And one more time, to be absolutely clear: a rejection must always carry a written reason from the manager. I know we said this before, just want it airtight, it kept getting skipped in the old system.
+Leo Tanaka: Understood, that one's not new, just emphasis. Anything on approvals when a manager's out?
+Farah Idris: Yes — when a manager's on leave, they can delegate approval authority to another manager for a specific date range. Only new items that land during that window go to the delegate.
+Maya Chen: Got it. Last thing before we wrap — more of a principle than a spec. The whole approval and training flow should just feel fast and trustworthy, nobody should dread using it.
+Leo Tanaka: Understood, we'll treat that as a guiding principle, not something we build directly.
+Owen Blake: Good session. Talk next week?
+Maya Chen: Next week works. Thanks all.

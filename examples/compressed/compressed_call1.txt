@@ -1,0 +1,38 @@
+Maya Chen: Morning everyone, thanks for making time. This is the big scoping session for CrateWorks. I've got Owen on dispatch, Devon on courier training, Farah from finance, Priyanka from support, and Leo from engineering.
+Leo Tanaka: Hi all, ready to take notes.
+Maya Chen: Let's start with dispatch. How does a delivery actually get scheduled?
+Owen Blake: We only dispatch within a 5 kilometer radius of each depot.
+Leo Tanaka: 5 kilometers, noted. How do customers pay?
+Owen Blake: Card or cash on delivery, customer's choice.
+Maya Chen: Anything on tracking?
+Owen Blake: Once a courier picks up the order, the customer sees a live map with the courier's location.
+Maya Chen: Good. One open question before we move on — do weekend orders follow the same SLA tiers as weekdays, or something looser?
+Owen Blake: Genuinely undecided. Ops wants to loosen it, finance isn't sure yet. Flag it as open for now.
+Maya Chen: Noted, open item. Devon, let's cover courier training.
+Devon Cole: Sure. A course is made of modules, and each module ends with one quiz.
+Leo Tanaka: So the quiz is the gate between modules?
+Devon Cole: Right. A courier needs at least 80 percent to pass a module quiz and unlock the next one.
+Maya Chen: And if they fail?
+Devon Cole: Three attempts, then they're locked out of that quiz for 24 hours. That came from our safety team.
+Devon Cole: Once every module in a course is passed, a certificate is issued automatically. It has to be a downloadable PDF, people print these for their files.
+Leo Tanaka: Roles for the platform overall?
+Devon Cole: Three roles: learner, instructor, admin.
+Maya Chen: Good. Manager approval must also come within a set window, right? That was on the SLA list somewhere.
+Owen Blake: That's actually Farah's side, expense approvals.
+Maya Chen: Right, sorry. Farah, over to you.
+Farah Idris: On expenses — an employee submits with a receipt photo attached. No photo, no submission.
+Farah Idris: It goes to their manager for approval, except anything under twenty-five dollars, which auto-approves.
+Farah Idris: Categories are a fixed list: travel, meals, supplies, software. Employees pick one.
+Farah Idris: Reimbursement pays out through payroll, next cycle.
+Farah Idris: Each employee can be reimbursed up to five hundred dollars a month without extra sign-off. Above that, a finance director has to approve too.
+Farah Idris: A manager has five business days to approve or reject, or it escalates to their manager.
+Farah Idris: And every submission, approved or not, gets retained for seven years for audit.
+Leo Tanaka: Got it. Priyanka, support side?
+Priyanka Shah: A user submits a ticket with a title, description, and a priority — low, medium, or high.
+Priyanka Shah: High priority tickets auto-assign to the on-call engineer immediately.
+Priyanka Shah: First response targets: high is four hours, medium is one business day, low is three business days.
+Priyanka Shah: The requester gets an email every time their ticket's status changes.
+Maya Chen: Great overview across the board. How was the team offsite last week, by the way?
+Devon Cole: Really good, we got a lot of alignment on the training roadmap.
+Maya Chen: Glad to hear it. Let's pick this up next week and go through changes.
+Farah Idris: Sounds good, talk then.
