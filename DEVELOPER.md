@@ -12,7 +12,7 @@ Just pulled this repo? Here's how to get it running.
 
 ```bash
 git clone https://github.com/Sudalaiyandi-sabarishkumar/note_taker.git
-cd note_taker/mom
+cd note_taker
 git checkout main
 ```
 
