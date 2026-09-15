@@ -249,27 +249,73 @@ def _split_sections(doc_text: str):
     return sections
 
 
+_DESC_CACHE_NAME = ".describe_cache.json"
+
+
+def _describe_one(path):
+    """Read+parse ONE doc into its one-line description. The expensive part
+    of ``describe_features`` -- cached below so a run only pays this for
+    docs that actually changed, not every doc in the folder."""
+    with open(path, encoding="utf-8") as f:
+        sec = _split_sections(f.read())
+    desc = sec["user_story"].strip().splitlines()[0] if sec["user_story"] else ""
+    facts = _parse_established_facts(sec["established_facts"])
+    # Append the first fact's verbatim quote -- model-written summaries
+    # sometimes drift ("...and payment methods" on a radius fact) and
+    # that drift is what lets a statement misroute; the quote is the
+    # client's actual words and is reliable.
+    if facts:
+        q = facts[0]["quote"]
+        desc = f"{desc} {q}".strip() if desc else facts[0]["summary"] + " " + q
+    return desc
+
+
 def describe_features(docs_dir=None):
     """``{feature_name: one-line description}`` -- the User Story if the doc
     has one, else its first Established Fact summary. Feeds the canon step so
-    it can route a new area onto the right existing doc by content."""
-    out = {}
-    for name, path in discover_features(docs_dir).items():
+    it can route a new area onto the right existing doc by content.
+
+    Building this used to mean opening and fully regex-parsing every doc in
+    ``docs_dir`` on EVERY run, no matter how many of them a run actually
+    touched -- an O(total docs) cost that grows with the whole knowledge
+    base, not with what changed. A small on-disk cache (keyed by each doc's
+    mtime + size) makes only the docs modified since the last run pay that
+    cost; an unchanged doc's description is reused as-is."""
+    import json
+    docs_dir = docs_dir or DOCS_DIR
+    features = discover_features(docs_dir)
+    cache_path = os.path.join(docs_dir, _DESC_CACHE_NAME)
+    try:
+        with open(cache_path, encoding="utf-8") as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+
+    out, new_cache, dirty = {}, {}, False
+    for name, path in features.items():
         try:
-            with open(path, encoding="utf-8") as f:
-                sec = _split_sections(f.read())
+            st = os.stat(path)
         except OSError:
             continue
-        desc = sec["user_story"].strip().splitlines()[0] if sec["user_story"] else ""
-        facts = _parse_established_facts(sec["established_facts"])
-        # Append the first fact's verbatim quote -- model-written summaries
-        # sometimes drift ("...and payment methods" on a radius fact) and
-        # that drift is what lets a statement misroute; the quote is the
-        # client's actual words and is reliable.
-        if facts:
-            q = facts[0]["quote"]
-            desc = f"{desc} {q}".strip() if desc else facts[0]["summary"] + " " + q
+        stamp = f"{st.st_mtime_ns}:{st.st_size}"
+        entry = cache.get(path)
+        if entry and entry.get("stamp") == stamp:
+            desc = entry["desc"]
+        else:
+            try:
+                desc = _describe_one(path)
+            except OSError:
+                continue
+            dirty = True
+        new_cache[path] = {"stamp": stamp, "desc": desc}
         out[name] = desc or name
+
+    if dirty or new_cache.keys() != cache.keys():
+        try:
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(new_cache, f)
+        except OSError:
+            pass  # cache is a pure speed optimisation -- never let it block a run
     return out
 
 
@@ -444,6 +490,8 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
 
     summary = []
     facts_touched = 0  # new / changed / partially-superseded facts, all features
+    new_fact_keys = set()  # {(feature, EF id)} added/changed THIS run -- lets
+                            # the contradiction sweep skip old-vs-old pairs
     for feature, group in by_feature.items():
         path = existing.get(feature)
         if path:
@@ -530,6 +578,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
+                new_fact_keys.add((feature, next_id))
                 next_id += 1
                 n_new += 1
                 # B: a brand-new lone doc born from a CHANGE statement ("change
@@ -583,6 +632,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
+                new_fact_keys.add((feature, next_id))
                 next_id += 1
                 n_new += 1
                 # B: NEW verdict but the wording reads as a revision -- the
@@ -636,6 +686,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
                 all_facts.append({"id": next_id, "superseded_by": None,
                                   "summary": s["summary"], "quote": s["quote"],
                                   "attribution": attribution})
+                new_fact_keys.add((feature, next_id))
                 if same_call:
                     # A speaker does not reverse their own requirement inside
                     # ONE call -- these are complementary. Keep both, no flag.
@@ -806,7 +857,7 @@ def merge_statements(statements, source_name, docs_dir=None, reconcile=None,
     if facts_touched:
         for line in resolve_open_questions(docs_dir, today, resolve_fn):
             summary.append(line)
-        for line in flag_cross_doc_contradictions(docs_dir, today):
+        for line in flag_cross_doc_contradictions(docs_dir, today, new_fact_keys):
             summary.append(line)
     return summary
 
@@ -961,7 +1012,7 @@ def resolve_open_questions(docs_dir=None, today=None, resolve_fn=None):
     return results
 
 
-def flag_cross_doc_contradictions(docs_dir=None, today=None):
+def flag_cross_doc_contradictions(docs_dir=None, today=None, new_facts=None):
     """Flag two active facts that state a DIFFERENT value for the SAME unit
     (e.g. one says "within 24 hours", another "within 48 hours") AND share a
     genuinely distinctive topic word. Both docs get an X- [NEEDS REVIEW]
@@ -969,7 +1020,14 @@ def flag_cross_doc_contradictions(docs_dir=None, today=None):
     Conservative -- a false flag wastes a reviewer's time, so the bar is:
     same unit, different value, >= 2 shared rare words (in <= a quarter of
     all facts), not a restatement, not opposite-direction bounds, and not a
-    pair already linked by supersede / partial-supersede."""
+    pair already linked by supersede / partial-supersede.
+
+    ``new_facts`` -- optional ``{(feature_name, EF id), ...}`` for the facts
+    added/changed THIS run. When given, a pair where NEITHER side is new is
+    skipped: that pair was already compared (and cleared) in an earlier run,
+    and can't have started contradicting without one side changing. This
+    keeps the sweep's cost tied to what changed, not the whole KB. Pass None
+    (default) to check every pair, e.g. for a one-off/standalone call."""
     if os.environ.get("MOM_CONTRA", "1") == "0":
         return []   # opt out with MOM_CONTRA=0
     docs_dir = docs_dir or DOCS_DIR
@@ -997,6 +1055,10 @@ def flag_cross_doc_contradictions(docs_dir=None, today=None):
         d1 = fw[i] - ambient
         for j in range(i + 1, len(pool)):
             n2, p2, f2 = pool[j]
+            if (new_facts is not None
+                    and (n1, f1["id"]) not in new_facts
+                    and (n2, f2["id"]) not in new_facts):
+                continue  # neither side changed this run -- already cleared
             m2 = _measures(f2["summary"] + " " + f2["quote"])
             if not m2:
                 continue

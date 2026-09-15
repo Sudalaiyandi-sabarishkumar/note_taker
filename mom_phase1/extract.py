@@ -1126,6 +1126,38 @@ def cohesion_split(statements, existing):
     return changes
 
 
+# Above this many existing docs, stop showing the model ALL of them for
+# routing -- a long list is slower to read AND easier to misroute into (more
+# near-miss candidates). Shortlist to the ones actually related to this
+# batch instead. Below the cap this is a no-op: shortlisting a small KB adds
+# risk (might drop the right doc) for no benefit.
+_CANON_SHORTLIST_MAX = 15
+
+
+def _shortlist_existing(existing, statements):
+    """Narrow ``existing`` ({area: description}) down to the areas relevant
+    to THIS batch of statements, scored by shared distinctive words. Keeps
+    the routing prompt (and the model's chance of confusing two areas)
+    bounded as the knowledge base grows, instead of growing with it."""
+    if len(existing) <= _CANON_SHORTLIST_MAX:
+        return existing
+    batch_words = set()
+    for s in statements:
+        batch_words |= _sig_words(s.get("feature", "") + " " + s["summary"])
+    scored = sorted(
+        existing.items(),
+        key=lambda kv: len(batch_words & _sig_words(kv[0] + " " + kv[1])),
+        reverse=True,
+    )
+    cut = scored[:_CANON_SHORTLIST_MAX]
+    # Drop the tail of that cut if it's pure zero-overlap padding beyond a
+    # small safety margin -- no point showing the model areas nothing here
+    # is actually close to.
+    kept = [kv for i, kv in enumerate(cut)
+            if i < 5 or len(batch_words & _sig_words(kv[0] + " " + kv[1])) > 0]
+    return dict(kept)
+
+
 def canonicalize_statements(statements, existing=None, model=None):
     """Assign each statement to a feature area. Returns a list of area names
     parallel to ``statements``. ``existing`` is ``{area: one-line
@@ -1146,7 +1178,13 @@ def canonicalize_statements(statements, existing=None, model=None):
         return fallback
     model = model or DEFAULT_MODEL
 
-    exist_block = "\n".join(f"- {k}: {v}" for k, v in existing.items()) or "(none yet)"
+    # Show the model only the existing areas relevant to this batch once the
+    # knowledge base has grown past a small list -- keeps the prompt (and
+    # the model's odds of confusing two areas) from growing with total KB
+    # size. The anti-misroute guard below still checks against the FULL
+    # ``existing``, not this shortlist.
+    shortlisted = _shortlist_existing(existing, statements)
+    exist_block = "\n".join(f"- {k}: {v}" for k, v in shortlisted.items()) or "(none yet)"
     stmt_block = "\n".join(
         f"{i}. [{s.get('feature', '?')}] {s['summary']}"
         for i, s in enumerate(statements, 1)
