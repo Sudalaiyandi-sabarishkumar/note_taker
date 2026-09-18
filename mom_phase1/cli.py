@@ -76,7 +76,8 @@ def _print_skills() -> None:
         print(f"  {left:<{width}}   {desc}")
 
 
-def run_phase1(path: str, source_name: str | None = None) -> None:
+def run_phase1(path: str, source_name: str | None = None,
+               docs_dir: str | None = None) -> None:
     from .transcript import load_transcript
 
     text, error = load_transcript(path)
@@ -84,7 +85,7 @@ def run_phase1(path: str, source_name: str | None = None) -> None:
         print(error)
         return
 
-    known = list(discover_features().keys())
+    known = list(discover_features(docs_dir=docs_dir).keys())
     merges = []
     try:
         statements = extract_statements(text, known)
@@ -95,6 +96,7 @@ def run_phase1(path: str, source_name: str | None = None) -> None:
         source_name = source_name or os.path.splitext(os.path.basename(path))[0]
         print("Reconciling against existing facts...")
         summary = merge_statements(statements, source_name,
+                                   docs_dir=docs_dir,
                                    reconcile=reconcile_statement,
                                    story_fn=synthesize_user_story,
                                    canon_fn=canonicalize_statements,
@@ -105,7 +107,7 @@ def run_phase1(path: str, source_name: str | None = None) -> None:
         # The 7B is not reliable enough to auto-merge docs (on a large
         # knowledge base it will occasionally merge unrelated ones), so this
         # only *suggests*. Apply what looks right with:  /merge <a> <b> ...
-        merges = suggest_merges(propose_doc_merges(describe_features()))
+        merges = suggest_merges(propose_doc_merges(describe_features(docs_dir=docs_dir)))
     except OllamaError as exc:
         print(f"\n{exc}")
         return
@@ -117,7 +119,8 @@ def run_phase1(path: str, source_name: str | None = None) -> None:
         print("\n".join(merges))
     print(
         f"\n{len(summary)} feature doc(s) touched. Changes were applied in place; "
-        f"review anything tagged [NEEDS REVIEW] / [UNVERIFIED CITATION] in {knowledge_docs.DOCS_DIR}/."
+        f"review anything tagged [NEEDS REVIEW] / [UNVERIFIED CITATION] in "
+        f"{docs_dir or knowledge_docs.DOCS_DIR}/."
     )
 
 

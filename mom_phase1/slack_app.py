@@ -3,7 +3,13 @@ Slack integration for mom-phase1.
 
 Run this from the `note_taker/` directory (or set MOM_DOCS_DIR /
 MOM_KNOWLEDGE_ROOT env vars) so it can see the same `knowledge/` folder
-the CLI uses.
+the CLI uses by default.
+
+Each Slack channel can point at its own docs directory (see /mom-docs-dir
+below) -- one bot process serves many channels, each with an isolated set
+of feature docs. Channels that never set one fall back to MOM_DOCS_DIR /
+`knowledge`. The channel -> directory mapping is persisted to
+`channel_docs_dirs.json` next to this file, so it survives a bot restart.
 
 Commands (all Socket Mode — no public URL, no exposed Ollama):
   /mom-extract         Opens a modal with a file-upload field. Upload a
@@ -14,7 +20,7 @@ Commands (all Socket Mode — no public URL, no exposed Ollama):
   /mom-ask <question>  Answers a question from the knowledge docs.
   /mom-merge "A" "B" [...]   Combine feature docs into the first.
   /mom-model           Shows which Ollama model is in use.
-  /mom-docs-dir [path] Shows, or changes, the active output directory.
+  /mom-docs-dir [path] Shows, or sets, this channel's docs directory.
   /mom-skills          Lists all of the above.
 
 Setup: see slack_integration/README.md in this folder. Each of these needs
@@ -23,8 +29,8 @@ page) before Slack will route it to this bot — see the README for exact
 steps.
 """
 
-import contextlib
 import io
+import json
 import os
 import re
 import sys
@@ -57,10 +63,77 @@ SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 
 app = App(token=SLACK_BOT_TOKEN)
 
-# Guards changes to the active docs directory so an in-flight extraction or
-# merge job (running on its own background thread) always sees one
-# consistent value rather than switching mid-job.
-_docs_dir_lock = threading.Lock()
+# ---------------------------------------------------------------------------
+# Per-channel docs directory
+# ---------------------------------------------------------------------------
+# {channel_id: docs_dir}. Channels not in this map use knowledge_docs.DOCS_DIR
+# (i.e. MOM_DOCS_DIR / "knowledge") as their default. Persisted to disk so
+# the mapping survives a bot restart.
+
+_CHANNEL_DIRS_PATH = os.path.join(os.path.dirname(__file__), "..", "channel_docs_dirs.json")
+_channel_dirs_lock = threading.Lock()
+
+
+def _load_channel_dirs() -> dict:
+    try:
+        with open(_CHANNEL_DIRS_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"[mom] warning: couldn't read {_CHANNEL_DIRS_PATH}: {exc}", file=sys.stderr)
+        return {}
+
+
+_channel_dirs = _load_channel_dirs()
+
+
+def _save_channel_dirs() -> None:
+    tmp_path = _CHANNEL_DIRS_PATH + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(_channel_dirs, f, indent=2, sort_keys=True)
+    os.replace(tmp_path, _CHANNEL_DIRS_PATH)
+
+
+def _docs_dir_for(channel_id: str) -> str:
+    """This channel's docs dir if it's been set, else the process default."""
+    return _channel_dirs.get(channel_id, knowledge_docs.DOCS_DIR)
+
+
+# ---------------------------------------------------------------------------
+# Thread-safe stdout capture for /mom-extract
+# ---------------------------------------------------------------------------
+# run_phase1() (cli.py) reports progress via plain print(). contextlib's
+# redirect_stdout swaps out sys.stdout for the WHOLE PROCESS, not just the
+# calling thread -- fine for the single-threaded CLI, but /mom-extract runs
+# each job on its own background thread, and two jobs can be in flight at
+# once (two channels, or two people, extracting at the same time). With
+# redirect_stdout, one job's redirect can silently steal another job's
+# print() output into the wrong buffer, and Slack ends up showing a channel's
+# extraction result mixed with or missing part of another channel's. This
+# wrapper keys off the calling thread instead, so each job's prints only
+# ever land in that job's own buffer.
+class _PerThreadStdout:
+    def __init__(self, default):
+        self._default = default
+        self._local = threading.local()
+
+    def register(self, buf) -> None:
+        self._local.buf = buf
+
+    def unregister(self) -> None:
+        if hasattr(self._local, "buf"):
+            del self._local.buf
+
+    def write(self, s: str) -> None:
+        (getattr(self._local, "buf", None) or self._default).write(s)
+
+    def flush(self) -> None:
+        (getattr(self._local, "buf", None) or self._default).flush()
+
+
+sys.stdout = _PerThreadStdout(sys.stdout)
+
 
 # Matches quoted or bare tokens in "/mom-merge "A" "B" C" -- same parsing
 # cli.py's /merge uses.
@@ -134,7 +207,11 @@ def handle_extract_submit(ack, body, client):
     ).start()
     client.chat_postMessage(
         channel=channel_id,
-        text=f"<@{user_id}> got `{slack_file['name']}` — running Phase 1 against `{DEFAULT_MODEL}`, will post here when done.",
+        text=(
+            f"<@{user_id}> got `{slack_file['name']}` — running Phase 1 against "
+            f"`{DEFAULT_MODEL}`, writing to `{_docs_dir_for(channel_id)}/`, "
+            f"will post here when done."
+        ),
     )
 
 
@@ -148,15 +225,17 @@ def _run_extraction_job(slack_file, channel_id, user_id, client):
     # downloaded to -- otherwise citations/change-log entries would show
     # something like "tmp60eusw_4" instead of "ex2".
     source_name = os.path.splitext(slack_file["name"])[0]
+    docs_dir = _docs_dir_for(channel_id)
 
     buf = io.StringIO()
+    sys.stdout.register(buf)
     try:
-        with contextlib.redirect_stdout(buf):
-            run_phase1(tmp_path, source_name=source_name)
+        run_phase1(tmp_path, source_name=source_name, docs_dir=docs_dir)
     except OllamaError as exc:
         client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> Ollama error: `{exc}`")
         return
     finally:
+        sys.stdout.unregister()
         os.unlink(tmp_path)
 
     output = buf.getvalue().strip() or "(no output)"
@@ -189,14 +268,15 @@ def _download_slack_file(slack_file) -> str | None:
 # ---------------------------------------------------------------------------
 
 @app.command("/mom-features")
-def list_features(ack, respond):
+def list_features(ack, respond, command):
     ack()
-    feats = discover_features()
+    docs_dir = _docs_dir_for(command["channel_id"])
+    feats = discover_features(docs_dir=docs_dir)
     if not feats:
-        respond("No feature docs yet.")
+        respond(f"No feature docs yet under `{docs_dir}/`.")
         return
     lines = [f"• *{name}*" for name in sorted(feats)]
-    respond("\n".join(["Feature docs:"] + lines))
+    respond("\n".join([f"Feature docs in `{docs_dir}/`:"] + lines))
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +290,7 @@ def show_feature(ack, respond, command):
     if not query:
         respond("Usage: `/mom-show <feature name>`")
         return
-    feats = discover_features()
+    feats = discover_features(docs_dir=_docs_dir_for(command["channel_id"]))
     for name, path in feats.items():
         if query in name.lower():
             with open(path, encoding="utf-8") as f:
@@ -231,10 +311,11 @@ def ask_question(ack, respond, command):
     if not question:
         respond("Usage: `/mom-ask <question>`")
         return
+    docs_dir = _docs_dir_for(command["channel_id"])
 
     def job():
         texts = {}
-        for name, path in discover_features().items():
+        for name, path in discover_features(docs_dir=docs_dir).items():
             try:
                 with open(path, encoding="utf-8") as f:
                     texts[name] = f.read()
@@ -262,9 +343,10 @@ def merge_docs(ack, respond, command):
     if not argstr:
         respond('Usage: `/mom-merge "First Doc" "Second Doc" ["Third" ...]`')
         return
+    docs_dir = _docs_dir_for(command["channel_id"])
 
     raw = [a or b for a, b in _QUOTED_RE.findall(argstr)]
-    feats = discover_features()
+    feats = discover_features(docs_dir=docs_dir)
     lower = {n.lower(): n for n in feats}
     names, missing = [], []
     for tok in raw:
@@ -281,7 +363,8 @@ def merge_docs(ack, respond, command):
 
     def job():
         try:
-            results = apply_merges([names], story_fn=synthesize_user_story, explicit=True)
+            results = apply_merges([names], docs_dir=docs_dir,
+                                   story_fn=synthesize_user_story, explicit=True)
         except OllamaError as exc:
             respond(f"Ollama error: `{exc}`")
             return
@@ -308,30 +391,39 @@ def show_model(ack, respond):
 @app.command("/mom-docs-dir")
 def docs_dir_command(ack, respond, command):
     ack()
+    channel_id = command["channel_id"]
     new_dir = command["text"].strip()
 
     if not new_dir:
         respond(
-            f"Current docs directory: `{knowledge_docs.DOCS_DIR}`\n"
-            f"Usage: `/mom-docs-dir <path>` to switch it (path is relative to "
-            f"wherever the bot process is running, e.g. `note_taker/`)."
+            f"This channel's docs directory: `{_docs_dir_for(channel_id)}`\n"
+            f"Usage: `/mom-docs-dir <path>` to set it for *this channel* "
+            f"(path is relative to wherever the bot process is running, "
+            f"e.g. `note_taker/`)."
         )
         return
 
-    with _docs_dir_lock:
+    with _channel_dirs_lock:
         try:
             os.makedirs(new_dir, exist_ok=True)
         except OSError as exc:
             respond(f"Couldn't create/access `{new_dir}`: `{exc}`")
             return
-        knowledge_docs.DOCS_DIR = new_dir
+        _channel_dirs[channel_id] = new_dir
+        try:
+            _save_channel_dirs()
+        except OSError as exc:
+            respond(
+                f"Set `{new_dir}` for this channel for now, but couldn't save it "
+                f"to disk (`{exc}`) — it won't survive a bot restart."
+            )
+            return
 
     respond(
-        f"Docs directory switched to `{new_dir}` for this bot process.\n"
+        f"This channel's docs directory is now `{new_dir}`.\n"
         f"`/mom-extract`, `/mom-features`, `/mom-show`, `/mom-ask`, and `/mom-merge` "
-        f"will now read/write there. This is in-memory only — it reverts to "
-        f"`MOM_DOCS_DIR` (or `knowledge`) from `.env` the next time the bot restarts. "
-        f"To make it permanent, update `MOM_DOCS_DIR` in `note_taker/.env` instead."
+        f"run *in this channel* will read/write there from now on — other channels "
+        f"are unaffected. This is saved to disk, so it survives a bot restart."
     )
 
 
@@ -346,7 +438,7 @@ _SKILLS = [
     ("/mom-ask", "<question>", "Answer a question from the knowledge docs."),
     ("/mom-merge", '"A" "B" [...]', "Combine feature docs into the first."),
     ("/mom-model", "", "Show which Ollama model is in use."),
-    ("/mom-docs-dir", "[path]", "Show, or change, the active output directory."),
+    ("/mom-docs-dir", "[path]", "Show, or set, this channel's docs directory."),
     ("/mom-skills", "", "Show this list."),
 ]
 
