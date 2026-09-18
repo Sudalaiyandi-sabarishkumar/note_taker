@@ -1,0 +1,133 @@
+# mom-phase1 → Slack
+
+Wraps the existing `mom_phase1` pipeline in a Slack bot using **Socket Mode**
+(no public URL, no exposing your local Ollama server to the internet — the
+bot process talks to `localhost:11434` exactly like the CLI does).
+
+## Architecture
+
+```
+Slack workspace
+   │  slash command / modal submission (via WebSocket, Socket Mode)
+   ▼
+slack_app.py  (this machine — same one running Ollama)
+   │  imports mom_phase1.cli.run_phase1 / extract.answer_question directly
+   ▼
+Ollama (localhost:11434) → mom-phase1 model (Modelfile, qwen2.5:7b-instruct base)
+   │
+   ▼
+knowledge/*.md   (same files the CLI writes — bot just reuses them)
+```
+
+## 1. Build the model (if you haven't already)
+
+```bash
+cd note_taker
+./build_model.sh
+```
+
+## 2. Create the Slack app
+
+1. Go to https://api.slack.com/apps → **Create New App** → **From scratch**.
+2. Name it (e.g. "Mom Phase1") and pick your workspace.
+3. **Socket Mode** (left sidebar) → toggle **Enable Socket Mode** on.
+   This generates an **App-Level Token** — create one with the `connections:write`
+   scope. Save it: this is `SLACK_APP_TOKEN` (starts with `xapp-`).
+4. **OAuth & Permissions** → **Scopes** → **Bot Token Scopes**, add:
+   - `commands` (to receive slash commands)
+   - `chat:write` (to post messages)
+   - `files:read` (to download uploaded transcripts)
+5. **Slash Commands** (left sidebar) → **Create New Command**, once for each:
+   | Command | Short description |
+   |---|---|
+   | `/mom-extract` | Upload a transcript and run Phase 1 |
+   | `/mom-features` | List feature docs |
+   | `/mom-show` | Show one feature doc |
+   | `/mom-ask` | Ask a question against the knowledge base |
+
+   With Socket Mode there's no "Request URL" to fill in — leave it blank /
+   any placeholder; Slack routes it over the socket instead.
+6. **Install App** (top of OAuth & Permissions) to your workspace. This gives
+   you a **Bot User OAuth Token** (`xoxb-...`) — this is `SLACK_BOT_TOKEN`.
+7. Invite the bot to the channel(s) you want it in: `/invite @Mom Phase1`.
+
+## 3. Install & run
+
+```bash
+cd note_taker
+pip install -e ".[cli]"
+pip install -r slack_integration/requirements.txt
+
+export SLACK_BOT_TOKEN=xoxb-...
+export SLACK_APP_TOKEN=xapp-...
+# optional, same overrides the CLI supports:
+export MOM_MODEL=mom-phase1
+export MOM_DOCS_DIR=knowledge
+
+python slack_integration/slack_app.py
+```
+
+You should see the Socket Mode connection open with no errors. Ollama must
+already be running (`brew services start ollama`, or `ollama serve`).
+
+## 4. Use it
+
+- `/mom-extract` → a modal opens with a file-upload field → attach a
+  `.txt`/`.vtt` transcript → **Extract**. The bot posts an ack immediately,
+  runs Phase 1 in a background thread (this can take a minute or two per
+  transcript since it's several sequential LLM calls), then posts the same
+  summary the CLI prints (feature docs touched, possible fragmentation, any
+  `[NEEDS REVIEW]` / `[UNVERIFIED CITATION]` flags).
+- `/mom-features` → lists feature docs.
+- `/mom-show notifications` → posts that doc as a code block.
+- `/mom-ask when did we switch from email to SMS?` → answers from the docs.
+
+## 5. Run it as a persistent service
+
+Socket Mode needs a long-lived process. Simplest options:
+
+**tmux / screen** (quick, single machine):
+```bash
+tmux new -s mom-slack 'python slack_integration/slack_app.py'
+```
+
+**systemd** (Linux, survives reboot):
+```ini
+# /etc/systemd/system/mom-slack.service
+[Unit]
+Description=mom-phase1 Slack bot
+After=network.target
+
+[Service]
+WorkingDirectory=/path/to/note_taker
+Environment=SLACK_BOT_TOKEN=xoxb-...
+Environment=SLACK_APP_TOKEN=xapp-...
+ExecStart=/usr/bin/python3 slack_integration/slack_app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+```bash
+sudo systemctl enable --now mom-slack
+```
+
+## Notes / things to watch
+
+- **Slack's 3-second ack window**: every handler calls `ack()` immediately
+  and does the actual model work in a background thread — don't move the
+  `run_phase1(...)` call in front of `ack()`.
+- **Multi-user knowledge dir**: everyone hitting `/mom-extract` writes into
+  the same `knowledge/` folder, same as multiple people running the CLI
+  locally. If you want per-project/per-channel doc sets, set `MOM_DOCS_DIR`
+  per deployment (e.g. one bot process + channel per client project) rather
+  than trying to make the single bot multi-tenant.
+- **Long transcripts / slow model**: `num_predict` is capped at 1536 in the
+  Modelfile and extraction chunks the transcript, so a long call can mean
+  several sequential requests to Ollama. There's no Slack-side timeout to
+  worry about since results are pushed via `chat.postMessage`, not returned
+  in the original response.
+- **Output truncation**: Slack `section` blocks cap out around 3000
+  characters; the code truncates at 2900 as a safety margin. For very large
+  outputs, consider uploading the changed `knowledge/*.md` file via
+  `files_upload_v2` instead of pasting it inline.
