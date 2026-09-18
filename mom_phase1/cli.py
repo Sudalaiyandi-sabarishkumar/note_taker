@@ -28,6 +28,7 @@ import re
 import sys
 
 from . import __version__
+from . import knowledge_docs
 from .extract import (analyze_gaps, answer_question, canonicalize_statements,
                       extract_statements, propose_doc_merges,
                       reconcile_statement, resolves_question,
@@ -75,7 +76,8 @@ def _print_skills() -> None:
         print(f"  {left:<{width}}   {desc}")
 
 
-def run_phase1(path: str) -> None:
+def run_phase1(path: str, source_name: str | None = None,
+               docs_dir: str | None = None) -> None:
     from .transcript import load_transcript
 
     text, error = load_transcript(path)
@@ -83,7 +85,7 @@ def run_phase1(path: str) -> None:
         print(error)
         return
 
-    known = list(discover_features().keys())
+    known = list(discover_features(docs_dir=docs_dir).keys())
     merges = []
     try:
         statements = extract_statements(text, known)
@@ -91,9 +93,10 @@ def run_phase1(path: str) -> None:
             print("No concrete, citable statements were found in this transcript.")
             return
 
-        source_name = os.path.splitext(os.path.basename(path))[0]
+        source_name = source_name or os.path.splitext(os.path.basename(path))[0]
         print("Reconciling against existing facts...")
         summary = merge_statements(statements, source_name,
+                                   docs_dir=docs_dir,
                                    reconcile=reconcile_statement,
                                    story_fn=synthesize_user_story,
                                    canon_fn=canonicalize_statements,
@@ -104,7 +107,7 @@ def run_phase1(path: str) -> None:
         # The 7B is not reliable enough to auto-merge docs (on a large
         # knowledge base it will occasionally merge unrelated ones), so this
         # only *suggests*. Apply what looks right with:  /merge <a> <b> ...
-        merges = suggest_merges(propose_doc_merges(describe_features()))
+        merges = suggest_merges(propose_doc_merges(describe_features(docs_dir=docs_dir)))
     except OllamaError as exc:
         print(f"\n{exc}")
         return
@@ -116,14 +119,15 @@ def run_phase1(path: str) -> None:
         print("\n".join(merges))
     print(
         f"\n{len(summary)} feature doc(s) touched. Changes were applied in place; "
-        f"review anything tagged [NEEDS REVIEW] / [UNVERIFIED CITATION] in {DOCS_DIR}/."
+        f"review anything tagged [NEEDS REVIEW] / [UNVERIFIED CITATION] in "
+        f"{docs_dir or knowledge_docs.DOCS_DIR}/."
     )
 
 
 def _list_features() -> None:
     feats = discover_features()
     if not feats:
-        print(f"No feature docs yet under {DOCS_DIR}/.")
+        print(f"No feature docs yet under {knowledge_docs.DOCS_DIR}/.")
         return
     for name, path in sorted(feats.items()):
         print(f"  {name}  ->  {path}")
