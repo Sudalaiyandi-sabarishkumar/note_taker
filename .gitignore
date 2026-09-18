@@ -6,6 +6,9 @@ dist/
 .venv/
 venv/
 
+# Slack bot secrets -- never goes in git
+.env
+
 # client content never goes in git -- Phase 1 output lives here
 knowledge/
 

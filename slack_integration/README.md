@@ -44,12 +44,21 @@ cd note_taker
    | `/mom-features` | List feature docs |
    | `/mom-show` | Show one feature doc |
    | `/mom-ask` | Ask a question against the knowledge base |
+   | `/mom-merge` | Combine two or more feature docs into the first |
+   | `/mom-model` | Show which Ollama model is in use |
+   | `/mom-skills` | List all of the above, in Slack |
 
    With Socket Mode there's no "Request URL" to fill in — leave it blank /
-   any placeholder; Slack routes it over the socket instead.
+   any placeholder; Slack routes it over the socket instead. Each command
+   needs its own entry here — Slack won't route a command to your app
+   unless it's been registered this way, even if the code already handles
+   it.
 6. **Install App** (top of OAuth & Permissions) to your workspace. This gives
    you a **Bot User OAuth Token** (`xoxb-...`) — this is `SLACK_BOT_TOKEN`.
-7. Invite the bot to the channel(s) you want it in: `/invite @Mom Phase1`.
+   If you add more slash commands (like the ones above) *after* installing,
+   reinstall the app once from the same page so Slack picks them up.
+7. Invite the bot to the channel(s) you want it in: `/invite @Feature Extractor`
+   (use your app's actual name).
 
 ## 3. Install & run
 
@@ -57,18 +66,40 @@ cd note_taker
 cd note_taker
 pip install -e ".[cli]"
 pip install -r slack_integration/requirements.txt
-
-export SLACK_BOT_TOKEN=xoxb-...
-export SLACK_APP_TOKEN=xapp-...
-# optional, same overrides the CLI supports:
-export MOM_MODEL=mom-phase1
-export MOM_DOCS_DIR=knowledge
-
-python slack_integration/slack_app.py
 ```
+
+Put your tokens in a `.env` file in `note_taker/` (already `.gitignore`d) so
+you don't have to `export` them every session:
+
+```
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_APP_TOKEN=xapp-...
+```
+
+`slack_app.py` loads this automatically via `python-dotenv`. Optional
+overrides (same ones the CLI supports) can go in the same file:
+```
+MOM_MODEL=mom-phase1
+MOM_DOCS_DIR=knowledge
+```
+
+Then just run:
+```bash
+python mom_phase1/slack_app.py
+```
+
+(If you're on the pipx-managed venv instead, use that venv's python — see
+the note at the end of this section.)
 
 You should see the Socket Mode connection open with no errors. Ollama must
 already be running (`brew services start ollama`, or `ollama serve`).
+
+**pipx users:** inject the extra deps into the same venv pipx built for
+`mom-phase1`, then run with that venv's interpreter:
+```bash
+pipx inject mom-phase1 slack_bolt requests python-dotenv
+"$(pipx environment --value PIPX_LOCAL_VENVS)/mom-phase1/bin/python" mom_phase1/slack_app.py
+```
 
 ## 4. Use it
 
@@ -81,6 +112,10 @@ already be running (`brew services start ollama`, or `ollama serve`).
 - `/mom-features` → lists feature docs.
 - `/mom-show notifications` → posts that doc as a code block.
 - `/mom-ask when did we switch from email to SMS?` → answers from the docs.
+- `/mom-merge "Certificate Format" "Certificate Content"` → folds the second
+  doc into the first, keeping every fact and citation from both.
+- `/mom-model` → shows which Ollama model the bot is running against.
+- `/mom-skills` → lists all of the above, inside Slack.
 
 ## 5. Run it as a persistent service
 
@@ -88,7 +123,7 @@ Socket Mode needs a long-lived process. Simplest options:
 
 **tmux / screen** (quick, single machine):
 ```bash
-tmux new -s mom-slack 'python slack_integration/slack_app.py'
+tmux new -s mom-slack 'python mom_phase1/slack_app.py'
 ```
 
 **systemd** (Linux, survives reboot):
@@ -102,7 +137,7 @@ After=network.target
 WorkingDirectory=/path/to/note_taker
 Environment=SLACK_BOT_TOKEN=xoxb-...
 Environment=SLACK_APP_TOKEN=xapp-...
-ExecStart=/usr/bin/python3 slack_integration/slack_app.py
+ExecStart=/usr/bin/python3 mom_phase1/slack_app.py
 Restart=always
 
 [Install]

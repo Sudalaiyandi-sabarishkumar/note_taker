@@ -31,8 +31,15 @@ import tempfile
 import threading
 
 import requests
+from dotenv import load_dotenv
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
+
+# Load SLACK_BOT_TOKEN / SLACK_APP_TOKEN (and anything else you add) from
+# note_taker/.env -- no more manual `export` before every run. Safe to call
+# even if .env doesn't exist (falls back to whatever's already in the shell
+# environment).
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
 # Make the mom_phase1 package importable regardless of which subfolder of
 # note_taker/ this file lives in (note_taker/mom_phase1/ here).
