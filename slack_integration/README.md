@@ -46,6 +46,7 @@ cd note_taker
    | `/mom-ask` | Ask a question against the knowledge base |
    | `/mom-merge` | Combine two or more feature docs into the first |
    | `/mom-model` | Show which Ollama model is in use |
+   | `/mom-docs-dir` | Show, or change, the active output directory |
    | `/mom-skills` | List all of the above, in Slack |
 
    With Socket Mode there's no "Request URL" to fill in — leave it blank /
@@ -115,6 +116,15 @@ pipx inject mom-phase1 slack_bolt requests python-dotenv
 - `/mom-merge "Certificate Format" "Certificate Content"` → folds the second
   doc into the first, keeping every fact and citation from both.
 - `/mom-model` → shows which Ollama model the bot is running against.
+- `/mom-docs-dir` (no argument) → shows the docs directory the bot is
+  currently reading/writing.
+- `/mom-docs-dir client-acme` → switches the bot to read/write
+  `client-acme/` instead, for every command, from then on. The directory is
+  created if it doesn't exist yet. This change is **in-memory only**: it
+  applies to the running bot process but reverts to `MOM_DOCS_DIR` (or
+  `knowledge`) from `.env` the next time the bot restarts. To make a
+  directory change permanent, edit `MOM_DOCS_DIR` in `note_taker/.env`
+  instead and restart the bot.
 - `/mom-skills` → lists all of the above, inside Slack.
 
 ## 5. Run it as a persistent service
@@ -154,9 +164,13 @@ sudo systemctl enable --now mom-slack
   `run_phase1(...)` call in front of `ack()`.
 - **Multi-user knowledge dir**: everyone hitting `/mom-extract` writes into
   the same `knowledge/` folder, same as multiple people running the CLI
-  locally. If you want per-project/per-channel doc sets, set `MOM_DOCS_DIR`
-  per deployment (e.g. one bot process + channel per client project) rather
-  than trying to make the single bot multi-tenant.
+  locally. `/mom-docs-dir <path>` lets anyone switch that folder for the
+  whole bot process without a restart, but it's still one shared setting —
+  it doesn't scope by user or channel, so two people switching it at once
+  will step on each other. For real per-project/per-channel doc sets, run
+  one bot process + channel per client project (with its own `MOM_DOCS_DIR`
+  in a separate `.env`) rather than trying to make the single bot
+  multi-tenant.
 - **Long transcripts / slow model**: `num_predict` is capped at 1536 in the
   Modelfile and extraction chunks the transcript, so a long call can mean
   several sequential requests to Ollama. There's no Slack-side timeout to

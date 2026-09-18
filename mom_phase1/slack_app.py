@@ -14,6 +14,7 @@ Commands (all Socket Mode — no public URL, no exposed Ollama):
   /mom-ask <question>  Answers a question from the knowledge docs.
   /mom-merge "A" "B" [...]   Combine feature docs into the first.
   /mom-model           Shows which Ollama model is in use.
+  /mom-docs-dir [path] Shows, or changes, the active output directory.
   /mom-skills          Lists all of the above.
 
 Setup: see slack_integration/README.md in this folder. Each of these needs
@@ -45,6 +46,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 # note_taker/ this file lives in (note_taker/mom_phase1/ here).
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from mom_phase1 import knowledge_docs                        # noqa: E402
 from mom_phase1.cli import run_phase1                       # noqa: E402
 from mom_phase1.extract import answer_question, synthesize_user_story  # noqa: E402
 from mom_phase1.knowledge_docs import apply_merges, discover_features  # noqa: E402
@@ -54,6 +56,11 @@ SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 
 app = App(token=SLACK_BOT_TOKEN)
+
+# Guards changes to the active docs directory so an in-flight extraction or
+# merge job (running on its own background thread) always sees one
+# consistent value rather than switching mid-job.
+_docs_dir_lock = threading.Lock()
 
 # Matches quoted or bare tokens in "/mom-merge "A" "B" C" -- same parsing
 # cli.py's /merge uses.
@@ -137,10 +144,15 @@ def _run_extraction_job(slack_file, channel_id, user_id, client):
         client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> couldn't download that file from Slack.")
         return
 
+    # slack_file's own name (e.g. "ex2.txt"), not the random temp path it was
+    # downloaded to -- otherwise citations/change-log entries would show
+    # something like "tmp60eusw_4" instead of "ex2".
+    source_name = os.path.splitext(slack_file["name"])[0]
+
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
-            run_phase1(tmp_path)
+            run_phase1(tmp_path, source_name=source_name)
     except OllamaError as exc:
         client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> Ollama error: `{exc}`")
         return
@@ -290,6 +302,40 @@ def show_model(ack, respond):
 
 
 # ---------------------------------------------------------------------------
+# /mom-docs-dir [<path>] — view or change the active output directory
+# ---------------------------------------------------------------------------
+
+@app.command("/mom-docs-dir")
+def docs_dir_command(ack, respond, command):
+    ack()
+    new_dir = command["text"].strip()
+
+    if not new_dir:
+        respond(
+            f"Current docs directory: `{knowledge_docs.DOCS_DIR}`\n"
+            f"Usage: `/mom-docs-dir <path>` to switch it (path is relative to "
+            f"wherever the bot process is running, e.g. `note_taker/`)."
+        )
+        return
+
+    with _docs_dir_lock:
+        try:
+            os.makedirs(new_dir, exist_ok=True)
+        except OSError as exc:
+            respond(f"Couldn't create/access `{new_dir}`: `{exc}`")
+            return
+        knowledge_docs.DOCS_DIR = new_dir
+
+    respond(
+        f"Docs directory switched to `{new_dir}` for this bot process.\n"
+        f"`/mom-extract`, `/mom-features`, `/mom-show`, `/mom-ask`, and `/mom-merge` "
+        f"will now read/write there. This is in-memory only — it reverts to "
+        f"`MOM_DOCS_DIR` (or `knowledge`) from `.env` the next time the bot restarts. "
+        f"To make it permanent, update `MOM_DOCS_DIR` in `note_taker/.env` instead."
+    )
+
+
+# ---------------------------------------------------------------------------
 # /mom-skills — list all commands
 # ---------------------------------------------------------------------------
 
@@ -300,6 +346,7 @@ _SKILLS = [
     ("/mom-ask", "<question>", "Answer a question from the knowledge docs."),
     ("/mom-merge", '"A" "B" [...]', "Combine feature docs into the first."),
     ("/mom-model", "", "Show which Ollama model is in use."),
+    ("/mom-docs-dir", "[path]", "Show, or change, the active output directory."),
     ("/mom-skills", "", "Show this list."),
 ]
 
