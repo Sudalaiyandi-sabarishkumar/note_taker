@@ -513,9 +513,6 @@ def create_project_command(ack, respond, command):
 
     respond(
         f"Created project `{name}` and switched this channel to it.\n"
-        f"`/extract`, `/features`, `/show`, `/ask`, and `/merge` "
-        f"run *in this channel* will read/write there from now on — other channels "
-        f"are unaffected. This is saved to disk, so it survives a bot restart."
     )
 
 
