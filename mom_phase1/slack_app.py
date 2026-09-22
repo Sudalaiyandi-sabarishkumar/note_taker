@@ -5,23 +5,29 @@ Run this from the `note_taker/` directory (or set MOM_DOCS_DIR /
 MOM_KNOWLEDGE_ROOT env vars) so it can see the same `knowledge/` folder
 the CLI uses by default.
 
-Each Slack channel can point at its own docs directory (see /mom-docs-dir
-below) -- one bot process serves many channels, each with an isolated set
-of feature docs. Channels that never set one fall back to MOM_DOCS_DIR /
-`knowledge`. The channel -> directory mapping is persisted to
-`channel_docs_dirs.json` next to this file, so it survives a bot restart.
+Each Slack channel can point at its own docs directory -- one bot process
+serves many channels, each with an isolated set of feature docs, organized
+as named "projects" under `projects/`. Channels that never create/switch
+to a project fall back to MOM_DOCS_DIR / `knowledge`. The channel -> dir
+mapping is persisted to `channel_docs_dirs.json` next to this file, so it
+survives a bot restart.
 
 Commands (all Socket Mode — no public URL, no exposed Ollama):
-  /mom-extract         Opens a modal with a file-upload field. Upload a
-                        .txt/.vtt transcript; the bot runs Phase 1 and
-                        posts the result back to the channel.
-  /mom-features        Lists discovered feature docs.
-  /mom-show <feature>  Posts one feature doc as a snippet.
-  /mom-ask <question>  Answers a question from the knowledge docs.
-  /mom-merge "A" "B" [...]   Combine feature docs into the first.
-  /mom-model           Shows which Ollama model is in use.
-  /mom-docs-dir [path] Shows, or sets, this channel's docs directory.
-  /mom-skills          Lists all of the above.
+  /extract          Opens a modal: pick a project from the dropdown,
+                         then upload a .txt/.vtt transcript. The bot runs
+                         Phase 1 against that project's dir and posts the
+                         result back to the channel.
+  /features          Lists discovered feature docs.
+  /show <feature>    Posts one feature doc as a snippet.
+  /ask <question>    Answers a question from the knowledge docs.
+  /merge "A" "B" [...]   Combine feature docs into the first.
+  /model             Shows which Ollama model is in use.
+  /create-project <name>   Creates a new project and switches this
+                         channel to it.
+  /switch-project [name]   Switches this channel to an existing
+                         project, or lists available projects if no name
+                         is given.
+  /skills             Lists all of the above.
 
 Setup: see slack_integration/README.md in this folder. Each of these needs
 its own Slash Command entry created in api.slack.com/apps (Slash Commands
@@ -64,13 +70,18 @@ SLACK_APP_TOKEN = os.environ["SLACK_APP_TOKEN"]
 app = App(token=SLACK_BOT_TOKEN)
 
 # ---------------------------------------------------------------------------
-# Per-channel docs directory
+# Per-channel docs directory, organized as named projects
 # ---------------------------------------------------------------------------
 # {channel_id: docs_dir}. Channels not in this map use knowledge_docs.DOCS_DIR
 # (i.e. MOM_DOCS_DIR / "knowledge") as their default. Persisted to disk so
 # the mapping survives a bot restart.
+#
+# Projects live as subdirectories of PROJECTS_ROOT, one per project name, so
+# /create-project and /switch-project can create/list/validate them
+# without the caller having to know or type a full path.
 
 _CHANNEL_DIRS_PATH = os.path.join(os.path.dirname(__file__), "..", "channel_docs_dirs.json")
+PROJECTS_ROOT = os.path.join(os.path.dirname(__file__), "..", "projects")
 _channel_dirs_lock = threading.Lock()
 
 
@@ -100,12 +111,41 @@ def _docs_dir_for(channel_id: str) -> str:
     return _channel_dirs.get(channel_id, knowledge_docs.DOCS_DIR)
 
 
+def _project_path(name: str) -> str:
+    """Resolve a project name to its directory path under PROJECTS_ROOT."""
+    return os.path.join(PROJECTS_ROOT, name)
+
+
+def _list_projects() -> list:
+    """Names of existing projects (subdirectories of PROJECTS_ROOT)."""
+    if not os.path.isdir(PROJECTS_ROOT):
+        return []
+    return sorted(
+        d for d in os.listdir(PROJECTS_ROOT)
+        if os.path.isdir(os.path.join(PROJECTS_ROOT, d))
+    )
+
+
+# One lock per docs_dir, created on first use. Two extractions into the same
+# project (e.g. two people, or the same person twice) are serialized so
+# run_phase1's read-modify-write of feature docs can't race; extractions
+# into different projects use different locks and still run fully in
+# parallel.
+_project_locks_guard = threading.Lock()
+_project_locks: dict = {}
+
+
+def _lock_for(docs_dir: str) -> threading.Lock:
+    with _project_locks_guard:
+        return _project_locks.setdefault(docs_dir, threading.Lock())
+
+
 # ---------------------------------------------------------------------------
-# Thread-safe stdout capture for /mom-extract
+# Thread-safe stdout capture for /extract
 # ---------------------------------------------------------------------------
 # run_phase1() (cli.py) reports progress via plain print(). contextlib's
 # redirect_stdout swaps out sys.stdout for the WHOLE PROCESS, not just the
-# calling thread -- fine for the single-threaded CLI, but /mom-extract runs
+# calling thread -- fine for the single-threaded CLI, but /extract runs
 # each job on its own background thread, and two jobs can be in flight at
 # once (two channels, or two people, extracting at the same time). With
 # redirect_stdout, one job's redirect can silently steal another job's
@@ -135,29 +175,66 @@ class _PerThreadStdout:
 sys.stdout = _PerThreadStdout(sys.stdout)
 
 
-# Matches quoted or bare tokens in "/mom-merge "A" "B" C" -- same parsing
+# Matches quoted or bare tokens in "/merge "A" "B" C" -- same parsing
 # cli.py's /merge uses.
 _QUOTED_RE = re.compile(r'"([^"]+)"|(\S+)')
 
 
 # ---------------------------------------------------------------------------
-# /mom-extract — opens a modal that accepts a transcript file upload
+# /extract — opens a modal that accepts a transcript file upload
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-extract")
-def open_extract_modal(ack, body, client):
+@app.command("/extract")
+def open_extract_modal(ack, respond, body, client):
     ack()
+    channel_id = body["channel_id"]
+    projects = _list_projects()
+
+    if not projects:
+        respond(
+            "No projects exist yet, so there's nothing to extract into.\n"
+            "Use `/create-project <name>` first, then run `/extract` again."
+        )
+        return
+
+    project_options = [
+        {"text": {"type": "plain_text", "text": name}, "value": name}
+        for name in projects
+    ]
+    # Pre-select whichever project this channel is currently pointed at, if
+    # it's a real project (not the fallback knowledge dir).
+    current_dir = _docs_dir_for(channel_id)
+    current_name = os.path.basename(current_dir.rstrip(os.sep))
+    initial_option = next(
+        (o for o in project_options if o["value"] == current_name), None
+    )
+
+    project_select_element = {
+        "type": "static_select",
+        "action_id": "project_select",
+        "placeholder": {"type": "plain_text", "text": "Choose a project"},
+        "options": project_options,
+    }
+    if initial_option is not None:
+        project_select_element["initial_option"] = initial_option
+
     client.views_open(
         trigger_id=body["trigger_id"],
         view={
             "type": "modal",
             "callback_id": "mom_extract_submit",
             # remember which channel to reply in once the model finishes
-            "private_metadata": body["channel_id"],
+            "private_metadata": channel_id,
             "title": {"type": "plain_text", "text": "Run Phase 1"},
             "submit": {"type": "plain_text", "text": "Extract"},
             "close": {"type": "plain_text", "text": "Cancel"},
             "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "project_block",
+                    "label": {"type": "plain_text", "text": "Project"},
+                    "element": project_select_element,
+                },
                 {
                     "type": "input",
                     "block_id": "transcript_block",
@@ -171,7 +248,7 @@ def open_extract_modal(ack, body, client):
                         "action_id": "transcript_file",
                         "max_files": 1,
                     },
-                }
+                },
             ],
         },
     )
@@ -182,12 +259,22 @@ def handle_extract_submit(ack, body, client):
     ack()
     channel_id = body["view"]["private_metadata"]
     user_id = body["user"]["id"]
-    files = (
-        body["view"]["state"]["values"]["transcript_block"]["transcript_file"]
-        .get("files", [])
-    )
+    values = body["view"]["state"]["values"]
+
+    project_name = values["project_block"]["project_select"]["selected_option"]["value"]
+    docs_dir = _project_path(project_name)
+    if not os.path.isdir(docs_dir):
+        # Project could've been deleted/renamed between opening the modal
+        # and submitting it.
+        client.chat_postMessage(
+            channel=channel_id,
+            text=f"<@{user_id}> project `{project_name}` no longer exists — try `/extract` again.",
+        )
+        return
+
+    files = values["transcript_block"]["transcript_file"].get("files", [])
     if not files:
-        client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> no file was attached — try `/mom-extract` again.")
+        client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> no file was attached — try `/extract` again.")
         return
 
     slack_file = files[0]
@@ -195,27 +282,27 @@ def handle_extract_submit(ack, body, client):
     if ext not in (".txt", ".vtt"):
         client.chat_postMessage(
             channel=channel_id,
-            text=f"<@{user_id}> `{slack_file['name']}` isn't a .txt or .vtt file — try `/mom-extract` again with a transcript.",
+            text=f"<@{user_id}> `{slack_file['name']}` isn't a .txt or .vtt file — try `/extract` again with a transcript.",
         )
         return
 
     # Run the (possibly slow, multi-LLM-call) extraction off the event loop.
     threading.Thread(
         target=_run_extraction_job,
-        args=(slack_file, channel_id, user_id, client),
+        args=(slack_file, channel_id, user_id, client, docs_dir),
         daemon=True,
     ).start()
     client.chat_postMessage(
         channel=channel_id,
         text=(
             f"<@{user_id}> got `{slack_file['name']}` — running Phase 1 against "
-            f"`{DEFAULT_MODEL}`, writing to `{_docs_dir_for(channel_id)}/`, "
-            f"will post here when done."
+            f"`{DEFAULT_MODEL}` for project `{project_name}`, writing to "
+            f"`{docs_dir}/`, will post here when done."
         ),
     )
 
 
-def _run_extraction_job(slack_file, channel_id, user_id, client):
+def _run_extraction_job(slack_file, channel_id, user_id, client, docs_dir):
     tmp_path = _download_slack_file(slack_file)
     if tmp_path is None:
         client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> couldn't download that file from Slack.")
@@ -225,12 +312,12 @@ def _run_extraction_job(slack_file, channel_id, user_id, client):
     # downloaded to -- otherwise citations/change-log entries would show
     # something like "tmp60eusw_4" instead of "ex2".
     source_name = os.path.splitext(slack_file["name"])[0]
-    docs_dir = _docs_dir_for(channel_id)
 
     buf = io.StringIO()
     sys.stdout.register(buf)
     try:
-        run_phase1(tmp_path, source_name=source_name, docs_dir=docs_dir)
+        with _lock_for(docs_dir):
+            run_phase1(tmp_path, source_name=source_name, docs_dir=docs_dir)
     except OllamaError as exc:
         client.chat_postMessage(channel=channel_id, text=f"<@{user_id}> Ollama error: `{exc}`")
         return
@@ -264,10 +351,10 @@ def _download_slack_file(slack_file) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# /mom-features — list discovered feature docs
+# /features — list discovered feature docs
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-features")
+@app.command("/features")
 def list_features(ack, respond, command):
     ack()
     docs_dir = _docs_dir_for(command["channel_id"])
@@ -280,15 +367,15 @@ def list_features(ack, respond, command):
 
 
 # ---------------------------------------------------------------------------
-# /mom-show <feature> — post one feature doc
+# /show <feature> — post one feature doc
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-show")
+@app.command("/show")
 def show_feature(ack, respond, command):
     ack()
     query = command["text"].strip().lower()
     if not query:
-        respond("Usage: `/mom-show <feature name>`")
+        respond("Usage: `/show <feature name>`")
         return
     feats = discover_features(docs_dir=_docs_dir_for(command["channel_id"]))
     for name, path in feats.items():
@@ -301,15 +388,15 @@ def show_feature(ack, respond, command):
 
 
 # ---------------------------------------------------------------------------
-# /mom-ask <question> — answer from the knowledge docs
+# /ask <question> — answer from the knowledge docs
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-ask")
+@app.command("/ask")
 def ask_question(ack, respond, command):
     ack()
     question = command["text"].strip()
     if not question:
-        respond("Usage: `/mom-ask <question>`")
+        respond("Usage: `/ask <question>`")
         return
     docs_dir = _docs_dir_for(command["channel_id"])
 
@@ -333,15 +420,15 @@ def ask_question(ack, respond, command):
 
 
 # ---------------------------------------------------------------------------
-# /mom-merge "A" "B" [...] — fold B, C, ... into A (keeps every fact)
+# /merge "A" "B" [...] — fold B, C, ... into A (keeps every fact)
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-merge")
+@app.command("/merge")
 def merge_docs(ack, respond, command):
     ack()
     argstr = command["text"].strip()
     if not argstr:
-        respond('Usage: `/mom-merge "First Doc" "Second Doc" ["Third" ...]`')
+        respond('Usage: `/merge "First Doc" "Second Doc" ["Third" ...]`')
         return
     docs_dir = _docs_dir_for(command["channel_id"])
 
@@ -358,7 +445,7 @@ def merge_docs(ack, respond, command):
     if missing:
         respond("No feature doc for: " + ", ".join(f'"{m}"' for m in missing))
     if len(names) < 2:
-        respond('Usage: `/mom-merge "First Doc" "Second Doc" ["Third" ...]`')
+        respond('Usage: `/merge "First Doc" "Second Doc" ["Third" ...]`')
         return
 
     def job():
@@ -375,75 +462,136 @@ def merge_docs(ack, respond, command):
 
 
 # ---------------------------------------------------------------------------
-# /mom-model — show which Ollama model is in use
+# /model — show which Ollama model is in use
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-model")
+@app.command("/model")
 def show_model(ack, respond):
     ack()
     respond(f"model: `{DEFAULT_MODEL}`  (override with the `MOM_MODEL` env var on the bot's host)")
 
 
 # ---------------------------------------------------------------------------
-# /mom-docs-dir [<path>] — view or change the active output directory
+# /create-project <name> — create a new project and switch to it
 # ---------------------------------------------------------------------------
 
-@app.command("/mom-docs-dir")
-def docs_dir_command(ack, respond, command):
+@app.command("/create-project")
+def create_project_command(ack, respond, command):
     ack()
     channel_id = command["channel_id"]
-    new_dir = command["text"].strip()
+    name = command["text"].strip()
 
-    if not new_dir:
+    if not name:
+        respond("Usage: `/create-project <name>` to create a new project and switch this channel to it.")
+        return
+
+    project_dir = _project_path(name)
+
+    if os.path.isdir(project_dir):
         respond(
-            f"This channel's docs directory: `{_docs_dir_for(channel_id)}`\n"
-            f"Usage: `/mom-docs-dir <path>` to set it for *this channel* "
-            f"(path is relative to wherever the bot process is running, "
-            f"e.g. `note_taker/`)."
+            f"A project named `{name}` already exists.\n"
+            f"Use `/switch-project {name}` to switch to it instead."
         )
         return
 
     with _channel_dirs_lock:
         try:
-            os.makedirs(new_dir, exist_ok=True)
+            os.makedirs(project_dir, exist_ok=False)
         except OSError as exc:
-            respond(f"Couldn't create/access `{new_dir}`: `{exc}`")
+            respond(f"Couldn't create `{project_dir}`: `{exc}`")
             return
-        _channel_dirs[channel_id] = new_dir
+
+        _channel_dirs[channel_id] = project_dir
         try:
             _save_channel_dirs()
         except OSError as exc:
             respond(
-                f"Set `{new_dir}` for this channel for now, but couldn't save it "
-                f"to disk (`{exc}`) — it won't survive a bot restart."
+                f"Created and switched to `{name}`, but couldn't save this to disk "
+                f"(`{exc}`) — it won't survive a bot restart."
             )
             return
 
     respond(
-        f"This channel's docs directory is now `{new_dir}`.\n"
-        f"`/mom-extract`, `/mom-features`, `/mom-show`, `/mom-ask`, and `/mom-merge` "
+        f"Created project `{name}` and switched this channel to it.\n"
+        f"`/extract`, `/features`, `/show`, `/ask`, and `/merge` "
         f"run *in this channel* will read/write there from now on — other channels "
         f"are unaffected. This is saved to disk, so it survives a bot restart."
     )
 
 
 # ---------------------------------------------------------------------------
-# /mom-skills — list all commands
+# /switch-project [name] — switch to an existing project, or list them
+# ---------------------------------------------------------------------------
+
+@app.command("/switch-project")
+def switch_project_command(ack, respond, command):
+    ack()
+    channel_id = command["channel_id"]
+    name = command["text"].strip()
+
+    if not name:
+        projects = _list_projects()
+        current = _docs_dir_for(channel_id)
+        if projects:
+            listing = "\n".join(f"• `{p}`" for p in projects)
+            respond(
+                f"This channel's current docs directory: `{current}`\n\n"
+                f"Existing projects:\n{listing}\n\n"
+                f"Usage: `/switch-project <name>`"
+            )
+        else:
+            respond(
+                f"This channel's current docs directory: `{current}`\n"
+                f"No projects exist yet. Use `/create-project <name>` to create one."
+            )
+        return
+
+    project_dir = _project_path(name)
+
+    if not os.path.isdir(project_dir):
+        respond(
+            f"No project named `{name}` found.\n"
+            f"Use `/create-project {name}` to create it."
+        )
+        return
+
+    with _channel_dirs_lock:
+        _channel_dirs[channel_id] = project_dir
+        try:
+            _save_channel_dirs()
+        except OSError as exc:
+            respond(
+                f"Switched to `{name}` for now, but couldn't save this to disk "
+                f"(`{exc}`) — it won't survive a bot restart."
+            )
+            return
+
+    respond(
+        f"Switched this channel to project `{name}`.\n"
+        f"`/extract`, `/features`, `/show`, `/ask`, and `/merge` "
+        f"run *in this channel* will now read/write there — other channels are "
+        f"unaffected. This is saved to disk, so it survives a bot restart."
+    )
+
+
+# ---------------------------------------------------------------------------
+# /skills — list all commands
 # ---------------------------------------------------------------------------
 
 _SKILLS = [
-    ("/mom-extract", "", "Upload a .txt/.vtt transcript, run Phase 1 on it."),
-    ("/mom-features", "", "List the feature docs discovered so far."),
-    ("/mom-show", "<feature>", "Show one feature doc (partial name match)."),
-    ("/mom-ask", "<question>", "Answer a question from the knowledge docs."),
-    ("/mom-merge", '"A" "B" [...]', "Combine feature docs into the first."),
-    ("/mom-model", "", "Show which Ollama model is in use."),
-    ("/mom-docs-dir", "[path]", "Show, or set, this channel's docs directory."),
-    ("/mom-skills", "", "Show this list."),
+    ("/extract", "", "Upload a .txt/.vtt transcript, run Phase 1 on it."),
+    ("/features", "", "List the feature docs discovered so far."),
+    ("/show", "<feature>", "Show one feature doc (partial name match)."),
+    ("/ask", "<question>", "Answer a question from the knowledge docs."),
+    ("/merge", '"A" "B" [...]', "Combine feature docs into the first."),
+    ("/model", "", "Show which Ollama model is in use."),
+    ("/create-project", "<name>", "Create a new project and switch this channel to it."),
+    ("/switch-project", "[name]", "Switch this channel to an existing project, or list them."),
+    ("/skills", "", "Show this list."),
 ]
 
 
-@app.command("/mom-skills")
+@app.command("/skills")
 def list_skills(ack, respond):
     ack()
     lines = [f"• `{cmd} {args}`".rstrip() + f" — {desc}" for cmd, args, desc in _SKILLS]
