@@ -581,8 +581,8 @@ def switch_project_command(ack, respond, command):
 _SKILLS = [
     ("/extract", "", "Upload a .txt/.vtt transcript, run feature extractor on it."),
     ("/features", "", "List the feature docs discovered so far."),
-    ("/show", "<feature>", "Show one feature doc (partial name match)."),
-    ("/ask", "<question>", "Answer a question from the knowledge docs."),
+    ("/show", "", "Show one feature doc (partial name match)."),
+    ("/ask", "", "Answer a question from the knowledge docs."),
     ("/create-project", "<name>", "Create a new project and switch this channel to it."),
     ("/help", "", "Show the list of commands."),
 ]
