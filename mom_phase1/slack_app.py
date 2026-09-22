@@ -27,7 +27,7 @@ Commands (all Socket Mode — no public URL, no exposed Ollama):
   /switch-project [name]   Switches this channel to an existing
                          project, or lists available projects if no name
                          is given.
-  /skills             Lists all of the above.
+  /help             Lists all of the above.
 
 Setup: see slack_integration/README.md in this folder. Each of these needs
 its own Slash Command entry created in api.slack.com/apps (Slash Commands
@@ -575,7 +575,7 @@ def switch_project_command(ack, respond, command):
 
 
 # ---------------------------------------------------------------------------
-# /skills — list all commands
+# /help — list all commands
 # ---------------------------------------------------------------------------
 
 _SKILLS = [
@@ -587,11 +587,11 @@ _SKILLS = [
     ("/model", "", "Show which Ollama model is in use."),
     ("/create-project", "<name>", "Create a new project and switch this channel to it."),
     ("/switch-project", "[name]", "Switch this channel to an existing project, or list them."),
-    ("/skills", "", "Show this list."),
+    ("/help", "", "Show this list."),
 ]
 
 
-@app.command("/skills")
+@app.command("/help")
 def list_skills(ack, respond):
     ack()
     lines = [f"• `{cmd} {args}`".rstrip() + f" — {desc}" for cmd, args, desc in _SKILLS]
