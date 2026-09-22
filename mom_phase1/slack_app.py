@@ -579,15 +579,12 @@ def switch_project_command(ack, respond, command):
 # ---------------------------------------------------------------------------
 
 _SKILLS = [
-    ("/extract", "", "Upload a .txt/.vtt transcript, run Phase 1 on it."),
+    ("/extract", "", "Upload a .txt/.vtt transcript, run feature extractor on it."),
     ("/features", "", "List the feature docs discovered so far."),
     ("/show", "<feature>", "Show one feature doc (partial name match)."),
     ("/ask", "<question>", "Answer a question from the knowledge docs."),
-    ("/merge", '"A" "B" [...]', "Combine feature docs into the first."),
-    ("/model", "", "Show which Ollama model is in use."),
     ("/create-project", "<name>", "Create a new project and switch this channel to it."),
-    ("/switch-project", "[name]", "Switch this channel to an existing project, or list them."),
-    ("/help", "", "Show this list."),
+    ("/help", "", "Show the list of commands."),
 ]
 
 
