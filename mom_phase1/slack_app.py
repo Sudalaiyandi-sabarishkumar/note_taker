@@ -12,14 +12,23 @@ to a project fall back to MOM_DOCS_DIR / `knowledge`. The channel -> dir
 mapping is persisted to `channel_docs_dirs.json` next to this file, so it
 survives a bot restart.
 
-Commands (all Socket Mode — no public URL, no exposed Ollama):
-  /extract          Opens a modal: pick a project from the dropdown,
-                         then upload a .txt/.vtt transcript. The bot runs
-                         Phase 1 against that project's dir and posts the
-                         result back to the channel.
-  /features          Lists discovered feature docs.
-  /show <feature>    Posts one feature doc as a snippet.
-  /ask <question>    Answers a question from the knowledge docs.
+Commands (all Socket Mode — no public URL, no exposed Ollama). /extract,
+/features, /show, /ask, and /open-questions all open a modal that starts
+with a project picker, so each run is explicit about which project it
+reads/writes instead of relying on whatever the channel happens to be
+switched to:
+  /extract          Modal: pick a project, upload a .txt/.vtt
+                         transcript. The bot runs Phase 1 against that
+                         project's dir and posts the result back to the
+                         channel.
+  /features          Modal: pick a project, lists its discovered
+                         feature docs.
+  /show              Modal: pick a project and a feature name (partial
+                         match ok), posts that feature doc as a snippet.
+  /ask               Modal: pick a project and a question, answers it
+                         from that project's knowledge docs.
+  /open-questions    Modal: pick a project, lists unresolved
+                         "Open Questions" from its feature docs.
   /merge "A" "B" [...]   Combine feature docs into the first.
   /model             Shows which Ollama model is in use.
   /create-project <name>   Creates a new project and switches this
@@ -126,6 +135,27 @@ def _list_projects() -> list:
     )
 
 
+def _project_select_element(channel_id: str) -> dict:
+    """A static_select block element listing every project, pre-selecting
+    whichever one this channel is currently switched to (if any)."""
+    options = [
+        {"text": {"type": "plain_text", "text": name}, "value": name}
+        for name in _list_projects()
+    ]
+    current_name = os.path.basename(_docs_dir_for(channel_id).rstrip(os.sep))
+    initial_option = next((o for o in options if o["value"] == current_name), None)
+
+    element = {
+        "type": "static_select",
+        "action_id": "project_select",
+        "placeholder": {"type": "plain_text", "text": "Choose a project"},
+        "options": options,
+    }
+    if initial_option is not None:
+        element["initial_option"] = initial_option
+    return element
+
+
 # One lock per docs_dir, created on first use. Two extractions into the same
 # project (e.g. two people, or the same person twice) are serialized so
 # run_phase1's read-modify-write of feature docs can't race; extractions
@@ -178,6 +208,58 @@ sys.stdout = _PerThreadStdout(sys.stdout)
 # Matches quoted or bare tokens in "/merge "A" "B" C" -- same parsing
 # cli.py's /merge uses.
 _QUOTED_RE = re.compile(r'"([^"]+)"|(\S+)')
+
+# Matches a markdown heading that starts an "Open Questions" section, e.g.
+# "## Open Questions" or "### Open Question". Assumes feature docs mark
+# unresolved items this way -- adjust the wording here if yours differ.
+_OPEN_Q_HEADING_RE = re.compile(r'^(#{1,6})\s*open questions?\b.*$', re.IGNORECASE | re.MULTILINE)
+
+
+def _extract_open_questions(content: str) -> list:
+    """Pull the bullet/numbered items out of a doc's "Open Questions"
+    section, if it has one. Stops at the next heading of the same or
+    higher level (or end of file)."""
+    match = _OPEN_Q_HEADING_RE.search(content)
+    if not match:
+        return []
+    level = len(match.group(1))
+    start = match.end()
+    next_heading_re = re.compile(rf'^#{{1,{level}}}\s+\S', re.MULTILINE)
+    end_match = next_heading_re.search(content, start)
+    section = content[start: end_match.start() if end_match else len(content)]
+
+    questions = []
+    for line in section.splitlines():
+        # Only top-level bullets (no leading indent) are real entries --
+        # an indented "- *quote*" line under an item is supporting evidence,
+        # not a separate question, so skip those.
+        if line[:1] in (" ", "\t"):
+            continue
+        line = line.strip()
+        if line.startswith(("-", "*", "•")):
+            item = line.lstrip("-*• ").strip()
+        elif re.match(r'^\d+[.)]\s+', line):
+            item = re.sub(r'^\d+[.)]\s+', '', line).strip()
+        else:
+            continue
+        if item:
+            questions.append(_clean_question_text(item))
+    return [q for q in questions if q and q.rstrip(".").strip().lower() != "none"]
+
+
+# Strips the "**ID** [TAG]: " prefix and the "— raised by ..." / "— not yet
+# decided; ..." attribution suffix off a raw Open Questions bullet, leaving
+# just the plain question/statement text.
+_OQ_PREFIX_RE = re.compile(r'^\*{0,2}[A-Z]+-[\w.-]+\*{0,2}\s*(?:\[[^\]]+\]\s*)?:?\s*')
+
+
+def _clean_question_text(item: str) -> str:
+    item = _OQ_PREFIX_RE.sub("", item).strip()
+    # Cut off the trailing attribution/reasoning, which is separated from
+    # the actual question by an em dash (e.g. "— raised by ...", "— not yet
+    # decided; follows from EF-1. (raised by ...)").
+    item = re.split(r'\s+—\s+', item, maxsplit=1)[0].strip()
+    return item.strip(' *"\'')
 
 
 # ---------------------------------------------------------------------------
@@ -351,54 +433,163 @@ def _download_slack_file(slack_file) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# /features — list discovered feature docs
+# /features — opens a modal: pick a project, list its feature docs
 # ---------------------------------------------------------------------------
 
 @app.command("/features")
-def list_features(ack, respond, command):
+def open_features_modal(ack, respond, body, client):
     ack()
-    docs_dir = _docs_dir_for(command["channel_id"])
+    channel_id = body["channel_id"]
+    if not _list_projects():
+        respond("No projects exist yet. Use `/create-project <name>` first.")
+        return
+
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view={
+            "type": "modal",
+            "callback_id": "features_submit",
+            "private_metadata": channel_id,
+            "title": {"type": "plain_text", "text": "Features"},
+            "submit": {"type": "plain_text", "text": "Show"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "project_block",
+                    "label": {"type": "plain_text", "text": "Project"},
+                    "element": _project_select_element(channel_id),
+                },
+            ],
+        },
+    )
+
+
+@app.view("features_submit")
+def handle_features_submit(ack, body, client):
+    ack()
+    channel_id = body["view"]["private_metadata"]
+    project_name = (
+        body["view"]["state"]["values"]["project_block"]["project_select"]["selected_option"]["value"]
+    )
+    docs_dir = _project_path(project_name)
+
     feats = discover_features(docs_dir=docs_dir)
     if not feats:
-        respond(f"No feature docs yet under `{docs_dir}/`.")
+        client.chat_postMessage(channel=channel_id, text=f"No feature docs yet in project `{project_name}`.")
         return
     lines = [f"• *{name}*" for name in sorted(feats)]
-    respond("\n".join([f"Feature docs in `{docs_dir}/`:"] + lines))
+    client.chat_postMessage(
+        channel=channel_id,
+        text="\n".join([f"Feature docs in `{project_name}`:"] + lines),
+    )
 
 
 # ---------------------------------------------------------------------------
-# /show <feature> — post one feature doc
+# /show — opens a modal: pick a project and a feature, posts that doc
 # ---------------------------------------------------------------------------
 
 @app.command("/show")
-def show_feature(ack, respond, command):
+def open_show_modal(ack, respond, body, client):
     ack()
-    query = command["text"].strip().lower()
-    if not query:
-        respond("Usage: `/show <feature name>`")
+    channel_id = body["channel_id"]
+    if not _list_projects():
+        respond("No projects exist yet. Use `/create-project <name>` first.")
         return
-    feats = discover_features(docs_dir=_docs_dir_for(command["channel_id"]))
+
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view={
+            "type": "modal",
+            "callback_id": "show_submit",
+            "private_metadata": channel_id,
+            "title": {"type": "plain_text", "text": "Show Feature"},
+            "submit": {"type": "plain_text", "text": "Show"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "project_block",
+                    "label": {"type": "plain_text", "text": "Project"},
+                    "element": _project_select_element(channel_id),
+                },
+                {
+                    "type": "input",
+                    "block_id": "feature_block",
+                    "label": {"type": "plain_text", "text": "Feature name (partial match ok)"},
+                    "element": {"type": "plain_text_input", "action_id": "feature_query"},
+                },
+            ],
+        },
+    )
+
+
+@app.view("show_submit")
+def handle_show_submit(ack, body, client):
+    ack()
+    channel_id = body["view"]["private_metadata"]
+    values = body["view"]["state"]["values"]
+    project_name = values["project_block"]["project_select"]["selected_option"]["value"]
+    query = values["feature_block"]["feature_query"]["value"].strip().lower()
+    docs_dir = _project_path(project_name)
+
+    feats = discover_features(docs_dir=docs_dir)
     for name, path in feats.items():
         if query in name.lower():
             with open(path, encoding="utf-8") as f:
                 content = f.read()
-            respond(f"*{name}*\n```{content[:2900]}```")
+            client.chat_postMessage(channel=channel_id, text=f"*{name}* (`{project_name}`)\n```{content[:2900]}```")
             return
-    respond(f'No feature doc matching "{query}".')
+    client.chat_postMessage(channel=channel_id, text=f'No feature doc matching "{query}" in project `{project_name}`.')
 
 
 # ---------------------------------------------------------------------------
-# /ask <question> — answer from the knowledge docs
+# /ask — opens a modal: pick a project and a question, answers from its docs
 # ---------------------------------------------------------------------------
 
 @app.command("/ask")
-def ask_question(ack, respond, command):
+def open_ask_modal(ack, respond, body, client):
     ack()
-    question = command["text"].strip()
-    if not question:
-        respond("Usage: `/ask <question>`")
+    channel_id = body["channel_id"]
+    if not _list_projects():
+        respond("No projects exist yet. Use `/create-project <name>` first.")
         return
-    docs_dir = _docs_dir_for(command["channel_id"])
+
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view={
+            "type": "modal",
+            "callback_id": "ask_submit",
+            "private_metadata": channel_id,
+            "title": {"type": "plain_text", "text": "Ask"},
+            "submit": {"type": "plain_text", "text": "Ask"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "project_block",
+                    "label": {"type": "plain_text", "text": "Project"},
+                    "element": _project_select_element(channel_id),
+                },
+                {
+                    "type": "input",
+                    "block_id": "question_block",
+                    "label": {"type": "plain_text", "text": "Question"},
+                    "element": {"type": "plain_text_input", "action_id": "question_text"},
+                },
+            ],
+        },
+    )
+
+
+@app.view("ask_submit")
+def handle_ask_submit(ack, body, client):
+    ack()
+    channel_id = body["view"]["private_metadata"]
+    values = body["view"]["state"]["values"]
+    project_name = values["project_block"]["project_select"]["selected_option"]["value"]
+    question = values["question_block"]["question_text"]["value"].strip()
+    docs_dir = _project_path(project_name)
 
     def job():
         texts = {}
@@ -411,12 +602,83 @@ def ask_question(ack, respond, command):
         try:
             answer = answer_question(question, texts)
         except OllamaError as exc:
-            respond(f"Ollama error: `{exc}`")
+            client.chat_postMessage(channel=channel_id, text=f"Ollama error: `{exc}`")
             return
-        respond(answer)
+        client.chat_postMessage(channel=channel_id, text=f"*[{project_name}]* {answer}")
 
     threading.Thread(target=job, daemon=True).start()
-    respond(f"Thinking about: _{question}_ …")
+    client.chat_postMessage(channel=channel_id, text=f"Thinking about: _{question}_ (project `{project_name}`) …")
+
+
+# ---------------------------------------------------------------------------
+# /open-questions [project] — list unresolved "Open Questions" across a
+# project's feature docs
+# ---------------------------------------------------------------------------
+
+@app.command("/open-questions")
+def open_questions_command(ack, respond, body, client):
+    ack()
+    channel_id = body["channel_id"]
+
+    if not _list_projects():
+        respond("No projects exist yet. Use `/create-project <name>` first.")
+        return
+
+    client.views_open(
+        trigger_id=body["trigger_id"],
+        view={
+            "type": "modal",
+            "callback_id": "open_questions_submit",
+            "private_metadata": channel_id,
+            "title": {"type": "plain_text", "text": "Open Questions"},
+            "submit": {"type": "plain_text", "text": "Show"},
+            "close": {"type": "plain_text", "text": "Cancel"},
+            "blocks": [
+                {
+                    "type": "input",
+                    "block_id": "project_block",
+                    "label": {"type": "plain_text", "text": "Project"},
+                    "element": _project_select_element(channel_id),
+                },
+            ],
+        },
+    )
+
+
+@app.view("open_questions_submit")
+def handle_open_questions_submit(ack, body, client):
+    ack()
+    channel_id = body["view"]["private_metadata"]
+    project_name = (
+        body["view"]["state"]["values"]["project_block"]["project_select"]["selected_option"]["value"]
+    )
+    docs_dir = _project_path(project_name)
+
+    feats = discover_features(docs_dir=docs_dir)
+    if not feats:
+        client.chat_postMessage(channel=channel_id, text=f"No feature docs yet in project `{project_name}`.")
+        return
+
+    by_feature = {}
+    for name, path in feats.items():
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+        except OSError:
+            continue
+        questions = _extract_open_questions(content)
+        if questions:
+            by_feature[name] = questions
+
+    if not by_feature:
+        client.chat_postMessage(channel=channel_id, text=f"No open questions found in project `{project_name}`.")
+        return
+
+    lines = [f"Open questions in `{project_name}`:"]
+    for name in sorted(by_feature):
+        lines.append(f"\n*{name}*")
+        lines.extend(f"  • {q}" for q in by_feature[name])
+    client.chat_postMessage(channel=channel_id, text="\n".join(lines))
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +775,9 @@ def create_project_command(ack, respond, command):
 
     respond(
         f"Created project `{name}` and switched this channel to it.\n"
+        f"`/extract`, `/features`, `/show`, `/ask`, and `/merge` "
+        f"run *in this channel* will read/write there from now on — other channels "
+        f"are unaffected. This is saved to disk, so it survives a bot restart."
     )
 
 
@@ -576,10 +841,11 @@ def switch_project_command(ack, respond, command):
 # ---------------------------------------------------------------------------
 
 _SKILLS = [
-    ("/extract", "", "Upload a .txt/.vtt transcript, run feature extractor on it."),
-    ("/features", "", "List the feature docs discovered so far."),
-    ("/show", "", "Show one feature doc (partial name match)."),
-    ("/ask", "", "Answer a question from the knowledge docs."),
+    ("/extract", "", "Pick a project, upload a .txt/.vtt transcript, run the extractor."),
+    ("/features", "", "Pick a project, list the feature docs discovered so far."),
+    ("/show", "", "Pick a project and feature (partial name match), show that doc."),
+    ("/ask", "", "Pick a project and a question, answer it from that project's docs."),
+    ("/open-questions", "", "Pick a project, list its open questions."),
     ("/create-project", "<name>", "Create a new project and switch this channel to it."),
     ("/help", "", "Show the list of commands."),
 ]
